@@ -1,0 +1,196 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import Link from "next/link";
+import { fetchForm, fetchSubmissions, syncForm } from "@/lib/api";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ParcelMap } from "@/components/parcel-map-client";
+import { parseParcellePoints } from "@/lib/geo";
+import { SubmissionCard } from "@/components/submission-card";
+import { exportAllSubmissions, exportToGeoJSON, exportToHTML } from "@/lib/export";
+import { ExportAllButton } from "@/components/export-button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ArrowLeft, RefreshCw, MapPin, Users, Download, FileCode, Map, FileText } from "lucide-react";
+
+export default function FormPage() {
+  const params = useParams();
+  const uid = params.uid as string;
+  const [form, setForm] = useState<any>(null);
+  const [submissions, setSubmissions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [f, s] = await Promise.all([fetchForm(uid), fetchSubmissions(uid)]);
+      setForm(f);
+      setSubmissions(s.results || []);
+    } catch (e) {
+      console.error(e);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (uid) load();
+  }, [uid]);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      await syncForm(uid);
+      await load();
+    } catch (e) {
+      console.error(e);
+    }
+    setSyncing(false);
+  };
+
+  // Extract parcelle data for map — enrichi avec infos soumission
+  const parcelles = submissions
+    .map((sub) => {
+      const data = sub.data || {};
+      const geo = data._geolocation as [number, number] | undefined;
+      const parcelleField = Object.keys(data).find((k) =>
+        /parcelle|plan.*parcellaire/i.test(k)
+      );
+      const nameField = Object.keys(data).find(
+        (k) => /nom.*producteur|pr.*nom/i.test(k) && !/technicien/i.test(k)
+      );
+      const communeField = Object.keys(data).find((k) => /commune/i.test(k));
+
+      const points = parcelleField ? parseParcellePoints(String(data[parcelleField])) : [];
+      const name = nameField ? String(data[nameField]) : `Soumission #${sub.kobo_id}`;
+      const submitDate = sub.submitted_at ? new Date(sub.submitted_at).toLocaleDateString("fr-FR") : "";
+
+      // Si pas de polygone mais des coordonnées GPS, créer un point
+      if (points.length === 0 && geo && Array.isArray(geo) && geo.length >= 2) {
+        points.push({ lat: geo[0], lng: geo[1] });
+      }
+
+      return {
+        id: sub.kobo_id,
+        name: String(name),
+        points,
+        submissionId: sub.kobo_id,
+        formUid: uid,
+        submitDate,
+        commune: communeField ? String(data[communeField]) : "",
+      };
+    })
+    .filter((p) => p.points.length > 0);
+
+  if (loading)
+    return <div className="text-center py-20 text-muted-foreground">Chargement...</div>;
+  if (!form)
+    return <div className="text-center py-20 text-muted-foreground">Formulaire introuvable</div>;
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center gap-4">
+        <Link href="/forms">
+          <Button variant="ghost" size="sm" className="gap-1">
+            <ArrowLeft className="h-4 w-4" /> Retour
+          </Button>
+        </Link>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">{form.name}</h1>
+          <p className="text-muted-foreground mt-1">
+            {submissions.length} soumission(s)
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {/* Export multi-format */}
+          <DropdownMenu>
+            <DropdownMenuTrigger className="group/inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+              <Download className="h-4 w-4" />
+              Exporter
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => {
+                exportAllSubmissions(submissions, form.name);
+              }}>
+                <FileText className="h-4 w-4 mr-2" />
+                CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => {
+                const count = exportToGeoJSON(submissions, form.name);
+                if (count === 0) alert("Aucune donnée géolocalisée à exporter.");
+              }}>
+                <Map className="h-4 w-4 mr-2" />
+                GeoJSON (carte)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => {
+                exportToHTML(submissions, form.name);
+              }}>
+                <FileCode className="h-4 w-4 mr-2" />
+                Rapport HTML
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button onClick={handleSync} disabled={syncing} variant="outline" className="gap-2">
+            <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "Sync..." : "Sync"}
+          </Button>
+        </div>
+      </div>
+
+      {/* Map */}
+      {parcelles.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <MapPin className="h-4 w-4 text-green-600" />
+              Parcelles georeferencees
+              <Badge variant="secondary" className="ml-2">{parcelles.length}</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ParcelMap parcelles={parcelles} height="350px" />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Submissions */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Users className="h-4 w-4" />
+            Soumissions
+            <Badge variant="secondary" className="ml-2">{submissions.length}</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {submissions.length === 0 ? (
+            <p className="text-muted-foreground text-center py-8">
+              Aucune soumission
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {submissions.map((sub) => (
+                <SubmissionCard
+                  key={sub.id}
+                  submission={sub}
+                  formUid={uid}
+                />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
