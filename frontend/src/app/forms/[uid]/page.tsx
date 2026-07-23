@@ -18,7 +18,19 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ArrowLeft, RefreshCw, MapPin, Users, Download, FileCode, Map, FileText, Loader2 } from "lucide-react";
+import {
+  ArrowLeft,
+  RefreshCw,
+  MapPin,
+  Users,
+  Download,
+  FileCode,
+  Map,
+  FileText,
+  Loader2,
+  Search,
+  Crosshair,
+} from "lucide-react";
 
 export default function FormPage() {
   const params = useParams();
@@ -27,6 +39,9 @@ export default function FormPage() {
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [focusId, setFocusId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -92,16 +107,37 @@ export default function FormPage() {
       }
 
       return {
-        id: sub.kobo_id,
+        id: String(sub.id),
         name: String(name),
         points,
-        submissionId: sub.kobo_id,
-        formUid: uid,
+        submissionId: String(sub.kobo_id),
+        // Lien cliquable depuis la bulle de la carte vers la fiche
+        href: `/forms/${uid}/submissions/${sub.id}`,
         submitDate,
         commune: communeField ? String(data[communeField]) : "",
       };
     })
     .filter((p) => p.points.length > 0);
+
+  // Recherche plein texte sur les valeurs de la soumission + filtre de statut
+  const filteredSubmissions = submissions.filter((sub) => {
+    const status = sub.validated || "pending";
+    if (statusFilter !== "all" && status !== statusFilter) return false;
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    const haystack = Object.entries(sub.data || {})
+      .filter(([k]) => !k.startsWith("_"))
+      .map(([, v]) => String(v))
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(q) || String(sub.kobo_id).includes(q);
+  });
+
+  const statusCounts = submissions.reduce<Record<string, number>>((acc, sub) => {
+    const s = sub.validated || "pending";
+    acc[s] = (acc[s] || 0) + 1;
+    return acc;
+  }, {});
 
   if (loading)
     return (
@@ -168,7 +204,7 @@ export default function FormPage() {
 
       {/* Map */}
       {parcelles.length > 0 && (
-        <Card className="overflow-hidden">
+        <Card id="carte-parcelles" className="overflow-hidden scroll-mt-20">
           <CardHeader className="pb-2 px-4 pt-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <MapPin className="h-4 w-4 text-green-600 shrink-0" />
@@ -178,7 +214,7 @@ export default function FormPage() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="h-[400px] md:h-[500px] w-full">
-              <ParcelMap parcelles={parcelles} height="100%" />
+              <ParcelMap parcelles={parcelles} height="100%" focusId={focusId} />
             </div>
           </CardContent>
         </Card>
@@ -190,23 +226,74 @@ export default function FormPage() {
           <CardTitle className="flex items-center gap-2 text-base">
             <Users className="h-4 w-4" />
             Soumissions
-            <Badge variant="secondary" className="ml-2">{submissions.length}</Badge>
+            <Badge variant="secondary" className="ml-2">
+              {filteredSubmissions.length}
+              {filteredSubmissions.length !== submissions.length && ` / ${submissions.length}`}
+            </Badge>
           </CardTitle>
+
+          {/* Recherche + filtre de statut */}
+          {submissions.length > 0 && (
+            <div className="flex flex-col sm:flex-row gap-2 pt-3">
+              <div className="relative flex-1">
+                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Rechercher (nom, commune, coopérative, n°…)"
+                  className="w-full border rounded-lg pl-9 pr-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 sm:w-56"
+              >
+                <option value="all">Tous les statuts ({submissions.length})</option>
+                <option value="pending">À valider ({statusCounts.pending || 0})</option>
+                <option value="valid">Validées ({statusCounts.valid || 0})</option>
+                <option value="needs_revision">
+                  À corriger ({statusCounts.needs_revision || 0})
+                </option>
+                <option value="rejected">Rejetées ({statusCounts.rejected || 0})</option>
+              </select>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {submissions.length === 0 ? (
             <p className="text-muted-foreground text-center py-8">
               Aucune soumission
             </p>
+          ) : filteredSubmissions.length === 0 ? (
+            <p className="text-muted-foreground text-center py-8">
+              Aucune soumission ne correspond à la recherche
+            </p>
           ) : (
             <div className="space-y-4">
-              {submissions.map((sub) => (
-                <SubmissionCard
-                  key={sub.id}
-                  submission={sub}
-                  formUid={uid}
-                />
-              ))}
+              {filteredSubmissions.map((sub) => {
+                const mapped = parcelles.some((p) => p.id === String(sub.id));
+                return (
+                  <div key={sub.id} className="relative">
+                    <SubmissionCard submission={sub} formUid={uid} />
+                    {mapped && (
+                      <button
+                        onClick={() => {
+                          setFocusId(String(sub.id));
+                          document
+                            .getElementById("carte-parcelles")
+                            ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                        }}
+                        title="Localiser sur la carte"
+                        aria-label="Localiser sur la carte"
+                        className="absolute top-2 right-2 p-1.5 rounded-md border bg-white/90 text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
+                      >
+                        <Crosshair className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </CardContent>

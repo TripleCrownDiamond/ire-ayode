@@ -1,3 +1,5 @@
+import { isImageValue, isFileValue } from "@/lib/attachments";
+
 // Fields to hide from display (technical metadata)
 const HIDDEN_PREFIXES = [
   "_", "formhub/", "meta/", "__version__",
@@ -8,10 +10,15 @@ const HIDDEN_PREFIXES = [
 
 const HIDDEN_EXACT = ["_id"];
 
-// Patterns that identify image fields by their KEY (not value)
+// Patterns that identify media fields by their KEY (not value)
 const IMAGE_KEY_PATTERNS = [
   /photo/i, /signature/i, /image/i, /picture/i, /img/i,
-  /camera/i, /capture/i, /photo/i,
+  /camera/i, /capture/i, /scan/i, /cliche/i, /visuel/i, /piece.*jointe/i,
+];
+
+// Keys that mention a media word but never hold a file (counts, yes/no...)
+const NOT_MEDIA_KEY_PATTERNS = [
+  /nombre.*(photo|image|scan)/i, /combien/i, /_count$/i, /_note$/i,
 ];
 
 // Field categories for grouping
@@ -58,13 +65,13 @@ export const FIELD_GROUPS = {
     label: "Photos",
     icon: "Camera",
     color: "purple",
-    patterns: [/photo/i, /image/i, /picture/i, /img/i, /camera/i, /capture/i],
+    patterns: [/photo/i, /image/i, /picture/i, /img/i, /camera/i, /capture/i, /scan/i],
   },
   signature: {
     label: "Signatures",
     icon: "PenTool",
     color: "slate",
-    patterns: [/signature/i],
+    patterns: [/signature/i, /paraphe/i, /emargement/i, /émargement/i],
   },
 } as const;
 
@@ -72,18 +79,51 @@ export interface FieldInfo {
   key: string;
   value: any;
   group: string;
+  /** Affichable dans une balise <img> */
   isImage: boolean;
+  /** Fichier joint non-image (PDF, doc…) → lien de téléchargement */
+  isFile: boolean;
   isGeo: boolean;
   isHidden: boolean;
   label: string;
 }
 
 function isImageByValue(value: any): boolean {
-  return typeof value === "string" && /\.(jpg|jpeg|png|gif|webp|bmp|tiff)/i.test(value);
+  return isImageValue(value);
 }
 
 function isImageByKey(key: string): boolean {
+  if (NOT_MEDIA_KEY_PATTERNS.some((p) => p.test(key))) return false;
   return IMAGE_KEY_PATTERNS.some((p) => p.test(key));
+}
+
+/**
+ * Un champ est une image si sa valeur porte une extension image, ou si sa clé
+ * désigne un média ET que la valeur ressemble à un nom de fichier.
+ * La 2e règle rattrape les formulaires dont les signatures sont stockées sans
+ * extension reconnue ; la condition « ressemble à un fichier » évite de traiter
+ * un champ texte (« nombre de photos : 3 ») comme une image.
+ */
+function detectMedia(key: string, value: any): { isImage: boolean; isFile: boolean } {
+  if (typeof value !== "string" || !value.trim()) return { isImage: false, isFile: false };
+  if (isImageByValue(value)) return { isImage: true, isFile: false };
+  if (isImageByKey(key)) {
+    // Clé média : on l'affiche comme image même si l'extension est inconnue,
+    // sauf pour les formats clairement non affichables.
+    if (/\.(pdf|doc|docx|xls|xlsx|csv|zip|mp3|mp4|3gp|m4a|wav|ogg)(\?|$)/i.test(value))
+      return { isImage: false, isFile: true };
+    // La valeur doit contenir un point (nom de fichier) — un « oui/non » ou un
+    // libellé de choix ne doit jamais devenir une image cassée.
+    if (isFileValue(value) || (value.includes(".") && !/\s/.test(value)))
+      return { isImage: true, isFile: false };
+  }
+  if (isFileValue(value)) return { isImage: false, isFile: true };
+  return { isImage: false, isFile: false };
+}
+
+/** Signature ou paraphe — inclut les variantes « signature du producteur », « emargement ». */
+function isSignatureField(key: string): boolean {
+  return /signature|paraphe|emargement|émargement/i.test(key);
 }
 
 function isGeoField(key: string): boolean {
@@ -111,6 +151,8 @@ function cleanLabel(key: string): string {
 }
 
 function classifyField(key: string): string {
+  // Les signatures priment : « signature_photo » est une signature, pas une photo.
+  if (isSignatureField(key)) return "signature";
   for (const [group, config] of Object.entries(FIELD_GROUPS)) {
     for (const pattern of config.patterns) {
       if (pattern.test(key)) return group;
@@ -126,14 +168,14 @@ export function parseFields(data: Record<string, any>): FieldInfo[] {
         HIDDEN_EXACT.includes(key) ||
         HIDDEN_PREFIXES.some((p) => key.startsWith(p));
 
-      // Detect images by value extension OR by field key pattern
-      const isImage = isImageByValue(value) || isImageByKey(key);
+      const { isImage, isFile } = detectMedia(key, value);
 
       return {
         key,
         value,
         group: classifyField(key),
         isImage,
+        isFile,
         isGeo: isGeoField(key),
         isHidden,
         label: cleanLabel(key),
@@ -161,12 +203,20 @@ export function getMainInfo(fields: FieldInfo[]) {
   const cooperative = fields.find((f) => /coop.*rative/i.test(f.key));
   const technicien = fields.find((f) => /technicien/i.test(f.key));
   const superficie = fields.find((f) => /superficie.*l.*exploitation/i.test(f.key));
-  // Photo: image field with "producteur" or "photo" in key
-  const photo = fields.find((f) => f.isImage && /producteur|photo/i.test(f.key));
-  // Signature: image field with "signature" in key
-  const signature = fields.find((f) => f.isImage && /signature/i.test(f.key));
+  // Photo : champ image qui n'est pas une signature (portrait du producteur en priorité)
+  const photo =
+    fields.find((f) => f.isImage && !isSignatureField(f.key) && /producteur/i.test(f.key)) ||
+    fields.find((f) => f.isImage && !isSignatureField(f.key));
+  // Signature : champ image dont la clé mentionne une signature
+  const signature = fields.find((f) => f.isImage && isSignatureField(f.key));
 
   return { name, genre, commune, village, cooperative, technicien, superficie, photo, signature };
 }
 
-export { isParcelleField, isGeoField, isImageByValue as isImageField, cleanLabel };
+export {
+  isParcelleField,
+  isGeoField,
+  isSignatureField,
+  isImageByValue as isImageField,
+  cleanLabel,
+};

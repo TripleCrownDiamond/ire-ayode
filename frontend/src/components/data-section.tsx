@@ -26,7 +26,13 @@ export function DataSection({
   const [open, setOpen] = useState(defaultOpen);
 
   const displayable = fields.filter(
-    (f) => !f.isImage && !Array.isArray(f.value) && typeof f.value !== "object"
+    (f) =>
+      !f.isImage &&
+      !f.isFile &&
+      !Array.isArray(f.value) &&
+      typeof f.value !== "object" &&
+      f.value !== null &&
+      String(f.value).trim() !== ""
   );
 
   if (displayable.length === 0) return null;

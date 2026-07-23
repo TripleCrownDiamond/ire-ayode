@@ -23,7 +23,7 @@ export function exportToJSON(data: Record<string, any>, filename: string) {
 export function exportToCSV(data: Record<string, any>, filename: string) {
   const fields = parseFields(data);
   const rows = fields
-    .filter((f) => !f.isImage && !Array.isArray(f.value))
+    .filter((f) => !f.isImage && !f.isFile && !Array.isArray(f.value))
     .map((f) => `"${f.label.replace(/"/g, '""')}","${String(f.value).replace(/"/g, '""')}"`)
     .join("\n");
 
