@@ -141,9 +141,10 @@ export default function ARattacherPage() {
           <Info className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
           <p>
             Ces formulaires ne contiennent pas de code producteur. Choisissez une
-            fiche existante, ou créez-en une : la plateforme attribuera un code
-            (PR-0001…). Le lien est enregistré une fois pour toutes — il ne sera
-            pas recalculé à partir des noms.
+            fiche existante, ou créez-en une : la plateforme calculera le code
+            à partir de la commune et de la coopérative (TCNO001…). Le lien est
+            enregistré une fois pour toutes — il ne sera pas recalculé à partir
+            des noms.
           </p>
         </CardContent>
       </Card>

@@ -6,7 +6,14 @@
 
 import { createAdmin } from "./supabase-admin";
 import { normalizeCode, extractProducerCode, extractProfile, type DBProducer } from "./producers";
-import { buildProducerCode, codePrefix, parseProducerCode } from "./producer-codes";
+import {
+  buildProducerCode,
+  buildParcelCode,
+  codePrefix,
+  parseProducerCode,
+  canRecalculate,
+  isIncompleteCode,
+} from "./producer-codes";
 
 export interface ProducerInput {
   code?: string;
@@ -152,6 +159,158 @@ export async function createProducer(
   }
 
   return { producer: data, created: true };
+}
+
+export interface RecalcResult {
+  producer_id: number;
+  old_code: string;
+  new_code: string;
+  parcels_updated: number;
+}
+
+/**
+ * Recalcule le code d'un producteur dont le code porte des « XX », maintenant
+ * que la commune et/ou la coopérative sont connues.
+ *
+ * Garde-fous :
+ *  - un code venu d'un formulaire Kobo n'est jamais touché ;
+ *  - un code déjà complet n'est jamais recalculé ;
+ *  - l'ancien code est conservé dans `previous_codes` (il a pu être imprimé
+ *    ou noté sur le terrain) ;
+ *  - les codes des parcelles suivent, en gardant leur numéro d'ordre.
+ */
+export async function recalculateProducerCode(
+  producerId: number,
+  updatedBy: string
+): Promise<{ result?: RecalcResult; reason?: string }> {
+  const supabase = createAdmin();
+
+  const { data: producer } = await supabase
+    .from("producers")
+    .select("*")
+    .eq("id", producerId)
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (!producer) return { reason: "Producteur introuvable" };
+
+  // Un code fourni par le formulaire fait autorité : on ne le réécrit pas.
+  if (producer.source === "kobo") {
+    return { reason: "Code issu du formulaire Kobo — non modifiable ici" };
+  }
+
+  const check = canRecalculate(producer.code, producer.commune, producer.cooperative);
+  if (!check.possible) return { reason: check.reason };
+
+  // Nouveau numéro d'ordre dans le préfixe cible
+  const generated = await nextPlatformCode(supabase, producer.commune, producer.cooperative);
+
+  const { error } = await supabase
+    .from("producers")
+    .update({
+      code: generated.code,
+      code_key: normalizeCode(generated.code),
+      code_prefix: generated.prefix,
+      order_no: generated.orderNo,
+      previous_codes: [...(producer.previous_codes || []), producer.code],
+      code_updated_at: new Date().toISOString(),
+      code_updated_by: updatedBy,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", producerId);
+
+  if (error) return { reason: error.message };
+
+  // Les parcelles conservent leur rang, seul le préfixe change
+  const { data: parcels } = await supabase
+    .from("parcels")
+    .select("id, code, order_no, previous_codes")
+    .eq("producer_id", producerId)
+    .is("deleted_at", null);
+
+  let parcelsUpdated = 0;
+  for (const parcel of parcels || []) {
+    const newCode = buildParcelCode(generated.code, parcel.order_no);
+    if (newCode === parcel.code) continue;
+    const { error: parcelError } = await supabase
+      .from("parcels")
+      .update({
+        code: newCode,
+        previous_codes: [...((parcel as any).previous_codes || []), parcel.code],
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", parcel.id);
+    if (!parcelError) parcelsUpdated += 1;
+  }
+
+  await supabase.from("sync_logs").insert({
+    action: "recalculate_producer_code",
+    count: 1,
+    time: new Date().toISOString(),
+    details: {
+      producer_id: producerId,
+      old_code: producer.code,
+      new_code: generated.code,
+      parcels_updated: parcelsUpdated,
+      updated_by: updatedBy,
+    },
+  });
+
+  return {
+    result: {
+      producer_id: producerId,
+      old_code: producer.code,
+      new_code: generated.code,
+      parcels_updated: parcelsUpdated,
+    },
+  };
+}
+
+/** Producteurs dont le code porte encore des « XX ». */
+export async function listIncompleteProducers() {
+  const supabase = createAdmin();
+  const { data } = await supabase
+    .from("producers")
+    .select("*")
+    .eq("source", "plateforme")
+    .is("deleted_at", null)
+    .order("code", { ascending: true })
+    .limit(1000);
+
+  return (data || [])
+    .filter((p: DBProducer) => isIncompleteCode(p.code))
+    .map((p: DBProducer) => {
+      const check = canRecalculate(p.code, p.commune, p.cooperative);
+      return {
+        ...p,
+        // Les données manquent-elles encore, ou le recalcul est-il possible ?
+        can_recalculate: check.possible,
+        new_prefix: check.newPrefix,
+        blocked_reason: check.reason,
+      };
+    });
+}
+
+/**
+ * Recalcule tous les codes incomplets pour lesquels l'information est
+ * désormais disponible. Les autres restent en l'état.
+ */
+export async function recalculateAllCodes(
+  updatedBy: string
+): Promise<{ updated: RecalcResult[]; still_incomplete: number }> {
+  const candidates = await listIncompleteProducers();
+  const updated: RecalcResult[] = [];
+
+  for (const producer of candidates) {
+    if (!producer.can_recalculate) continue;
+    const { result } = await recalculateProducerCode(producer.id, updatedBy);
+    if (result) updated.push(result);
+  }
+
+  return {
+    updated,
+    still_incomplete: candidates.filter((p: any) => !p.can_recalculate).length,
+  };
 }
 
 /** Rattache une soumission à un producteur. `producerId` à null détache. */

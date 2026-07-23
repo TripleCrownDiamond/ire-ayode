@@ -81,6 +81,68 @@ export function buildParcelCode(producerCode: string, orderNo: number): string {
   return `${producerCode}-${orderNo}`;
 }
 
+/** Marqueur des deux lettres manquantes dans un préfixe. */
+export const MISSING_MARK = "XX";
+
+/** Nombre de segments manquants dans un préfixe (0, 1 ou 2). */
+export function missingSegments(prefix: string): number {
+  const p = (prefix || "").toUpperCase();
+  return (p.slice(0, 2) === MISSING_MARK ? 1 : 0) + (p.slice(2, 4) === MISSING_MARK ? 1 : 0);
+}
+
+/** Le code porte-t-il une information manquante ? */
+export function isIncompleteCode(code: string): boolean {
+  const parsed = parseProducerCode(code);
+  return parsed ? missingSegments(parsed.prefix) > 0 : false;
+}
+
+/**
+ * Le code peut-il être amélioré avec les informations disponibles aujourd'hui ?
+ * Uniquement dans le sens du gain : on ne remplace jamais un préfixe complet,
+ * et on ne dégrade jamais un préfixe partiel.
+ */
+export function canRecalculate(
+  currentCode: string,
+  commune?: string | null,
+  cooperative?: string | null
+): { possible: boolean; currentPrefix: string; newPrefix: string; reason?: string } {
+  const parsed = parseProducerCode(currentCode);
+  if (!parsed) {
+    return {
+      possible: false,
+      currentPrefix: "",
+      newPrefix: "",
+      reason: "Code hors format généré — il vient du formulaire Kobo",
+    };
+  }
+
+  const newPrefix = codePrefix(commune, cooperative);
+  const before = missingSegments(parsed.prefix);
+  const after = missingSegments(newPrefix);
+
+  if (before === 0) {
+    return {
+      possible: false,
+      currentPrefix: parsed.prefix,
+      newPrefix,
+      reason: "Le code est déjà complet",
+    };
+  }
+  if (after >= before) {
+    return {
+      possible: false,
+      currentPrefix: parsed.prefix,
+      newPrefix,
+      reason:
+        after === 2
+          ? "Commune et coopérative toujours manquantes"
+          : "L'information manquante n'est toujours pas renseignée",
+    };
+  }
+
+  return { possible: true, currentPrefix: parsed.prefix, newPrefix };
+}
+
 /** Décompose un code producteur généré, si le format correspond. */
 export function parseProducerCode(
   code: string

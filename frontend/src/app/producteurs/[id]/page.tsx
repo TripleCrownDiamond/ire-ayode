@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button";
 import { ParcelMap } from "@/components/parcel-map-client";
 import { ValidationBadge } from "@/components/validation-badge";
 import { parseParcellePoints } from "@/lib/geo";
-import { fetchProducer, updateProducer } from "@/lib/api";
+import { fetchProducer, updateProducer, recalculateCodes } from "@/lib/api";
 import { PRODUCER_SOURCE_LABELS, LINK_SOURCE_LABELS } from "@/lib/producers";
+import { canRecalculate, isIncompleteCode } from "@/lib/producer-codes";
 import {
   ArrowLeft,
   User,
@@ -24,6 +25,7 @@ import {
   Pencil,
   Save,
   X,
+  RefreshCw,
 } from "lucide-react";
 
 const FORM_COLORS = [
@@ -49,6 +51,8 @@ export default function ProducteurPage() {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [recalculating, setRecalculating] = useState(false);
+  const [codeMessage, setCodeMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -82,6 +86,23 @@ export default function ProducteurPage() {
     setSaving(false);
   };
 
+  // Le code porte-t-il encore des « XX », et peut-on le compléter maintenant ?
+  const handleRecalculate = async () => {
+    setRecalculating(true);
+    setCodeMessage(null);
+    try {
+      const res = await recalculateCodes(id);
+      setCodeMessage(
+        `${res.old_code} → ${res.new_code}` +
+          (res.parcels_updated ? ` · ${res.parcels_updated} parcelle(s) renommée(s)` : "")
+      );
+      await load();
+    } catch (e) {
+      setCodeMessage(e instanceof Error ? e.message : "Recalcul impossible");
+    }
+    setRecalculating(false);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -95,6 +116,11 @@ export default function ProducteurPage() {
       <div className="text-center py-20 text-muted-foreground">Producteur introuvable</div>
     );
   }
+
+  // Un code « XX » venu de la plateforme peut être complété plus tard
+  const incomplete =
+    producer.source === "plateforme" && isIncompleteCode(producer.code);
+  const recalc = canRecalculate(producer.code, producer.commune, producer.cooperative);
 
   const submissions: any[] = producer.submissions || [];
   const formUids = [...new Set(submissions.map((s) => s.form_uid))];
@@ -191,7 +217,52 @@ export default function ProducteurPage() {
             >
               {PRODUCER_SOURCE_LABELS[producer.source]}
             </Badge>
+            {(producer.previous_codes || []).length > 0 && (
+              <Badge
+                variant="outline"
+                className="text-xs text-muted-foreground"
+                title={`Anciens codes : ${(producer.previous_codes || []).join(", ")}`}
+              >
+                anciennement {(producer.previous_codes || []).join(", ")}
+              </Badge>
+            )}
           </div>
+
+          {/* Code incomplet : recalcul propose des que la donnee manquante arrive */}
+          {incomplete && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+              <p className="text-sm text-amber-900">
+                Ce code est incomplet : la{" "}
+                {!producer.commune && !producer.cooperative
+                  ? "commune et la coopérative sont"
+                  : !producer.commune
+                    ? "commune est"
+                    : "coopérative est"}{" "}
+                inconnue au moment de sa création.
+                {recalc.possible
+                  ? ` L'information est maintenant disponible — le code peut devenir ${recalc.newPrefix}xxx.`
+                  : " Renseignez-la ci-dessus pour pouvoir recalculer le code."}
+              </p>
+              {codeMessage && (
+                <p className="text-sm font-medium text-amber-900">{codeMessage}</p>
+              )}
+              {recalc.possible && (
+                <Button
+                  size="sm"
+                  onClick={handleRecalculate}
+                  disabled={recalculating}
+                  className="gap-1.5"
+                >
+                  {recalculating ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                  Recalculer le code
+                </Button>
+              )}
+            </div>
+          )}
 
           {editing ? (
             <div className="grid gap-3 sm:grid-cols-2">

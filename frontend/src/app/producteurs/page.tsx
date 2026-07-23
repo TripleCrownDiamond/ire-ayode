@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { fetchProducers, createProducer, autoLinkProducers } from "@/lib/api";
 import { PRODUCER_SOURCE_LABELS, type DBProducer } from "@/lib/producers";
+import { IncompleteCodesBanner } from "@/components/incomplete-codes-banner";
 import {
   Users,
   Search,
@@ -140,8 +141,9 @@ export default function ProducteursPage() {
                 Si le formulaire Kobo contient un code producteur
               </span>
               , il est repris tel quel et les fiches sont rattachées automatiquement.
-              Sinon, la plateforme attribue un code (PR-0001, PR-0002…) et le
-              rattachement se fait depuis chaque soumission.
+              Sinon, la plateforme calcule le code : 2 lettres de la commune +
+              2 lettres de la coopérative + numéro d&apos;ordre (TCNO001,
+              TCNO002…), et le rattachement se fait depuis chaque soumission.
             </p>
             <p className="text-blue-800">
               Aucun rapprochement n&apos;est deviné à partir des noms : deux
@@ -150,6 +152,9 @@ export default function ProducteursPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Codes a trous : recalcul propose des que la donnee manquante arrive */}
+      <IncompleteCodesBanner onRecalculated={load} />
 
       {linkResult && (
         <Card className="border-emerald-200 bg-emerald-50">
@@ -188,12 +193,12 @@ export default function ProducteursPage() {
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="text-sm space-y-1">
                 <span className="text-muted-foreground text-xs">
-                  Code — laisser vide pour attribution automatique
+                  Code — laisser vide pour un calcul depuis commune + coopérative
                 </span>
                 <input
                   value={draft.code}
                   onChange={(e) => setDraft({ ...draft, code: e.target.value })}
-                  placeholder="PR-0001"
+                  placeholder="TCNO001"
                   className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
               </label>

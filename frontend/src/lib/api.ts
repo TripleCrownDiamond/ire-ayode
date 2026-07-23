@@ -143,7 +143,7 @@ export async function fetchProducer(id: number) {
   return res.json();
 }
 
-/** Crée un producteur. Sans `code`, la plateforme en attribue un (PR-0001…). */
+/** Crée un producteur. Sans `code`, il est calculé depuis commune + coopérative. */
 export async function createProducer(input: Record<string, unknown>) {
   const res = await fetch(`${API_BASE}/producteurs`, {
     method: "POST",
@@ -189,6 +189,24 @@ export async function autoLinkProducers(formUid?: string) {
   const q = formUid ? `&form=${encodeURIComponent(formUid)}` : "";
   const res = await fetch(`${API_BASE}/producteurs?action=autolink${q}`, { method: "POST" });
   if (!res.ok) throw new Error("Rattachement automatique impossible");
+  return res.json();
+}
+
+/** Producteurs dont le code porte encore des « XX ». */
+export async function fetchIncompleteCodes() {
+  const res = await fetch(`${API_BASE}/producteurs/codes`);
+  if (!res.ok) throw new Error("Chargement des codes incomplets impossible");
+  return res.json();
+}
+
+/** Recalcule les codes incomplets. Sans `id`, traite tous ceux qui le peuvent. */
+export async function recalculateCodes(id?: number) {
+  const q = id ? `?id=${id}` : "";
+  const res = await fetch(`${API_BASE}/producteurs/codes${q}`, { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || "Recalcul impossible");
+  }
   return res.json();
 }
 
