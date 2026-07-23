@@ -9,8 +9,11 @@ import {
   XCircle,
 } from "lucide-react";
 
+export type ValidationStatus = "pending" | "valid" | "needs_revision" | "rejected";
+
 interface ValidationBadgeProps {
-  status: "pending" | "valid" | "needs_revision" | "rejected";
+  /** Statut brut : une valeur inconnue retombe sur « en attente ». */
+  status: ValidationStatus | string;
   className?: string;
 }
 
@@ -38,7 +41,8 @@ const STATUS_CONFIG = {
 };
 
 export function ValidationBadge({ status, className }: ValidationBadgeProps) {
-  const config = STATUS_CONFIG[status];
+  // Un statut absent ou inattendu ne doit pas faire planter la page
+  const config = STATUS_CONFIG[status as ValidationStatus] ?? STATUS_CONFIG.pending;
   const Icon = config.icon;
 
   return (

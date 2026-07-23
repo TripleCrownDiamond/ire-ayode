@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { ParcelMap } from "@/components/parcel-map-client";
 import { parseParcellePoints } from "@/lib/geo";
 import { SubmissionCard } from "@/components/submission-card";
+import { FormMissingBanner } from "@/components/form-missing-banner";
+import { useRouter } from "next/navigation";
 import { exportAllSubmissions, exportToGeoJSON, exportToHTML } from "@/lib/export";
 import { ExportAllButton } from "@/components/export-button";
 import {
@@ -34,6 +36,7 @@ import {
 
 export default function FormPage() {
   const params = useParams();
+  const router = useRouter();
   const uid = params.uid as string;
   const [form, setForm] = useState<any>(null);
   const [submissions, setSubmissions] = useState<any[]>([]);
@@ -158,6 +161,17 @@ export default function FormPage() {
           </Button>
         </Link>
       </div>
+
+      {/* Formulaire disparu de Kobo : on propose la suppression, sans jamais l'imposer */}
+      {form.missing_on_kobo && (
+        <FormMissingBanner
+          uid={uid}
+          name={form.name}
+          submissionCount={submissions.length}
+          lastSeenAt={form.kobo_last_seen_at}
+          onDeleted={() => router.push("/forms")}
+        />
+      )}
 
       <div className="flex items-center justify-between">
         <div>

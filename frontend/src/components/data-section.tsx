@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { FieldInfo } from "@/lib/field-map";
+import { formatGeoValue } from "@/lib/geo";
 
 interface DataSectionProps {
   title?: string;
@@ -69,7 +70,9 @@ export function DataSection({
                   <TableCell className="text-muted-foreground text-xs font-mono">
                     {field.label}
                   </TableCell>
-                  <TableCell className="text-sm">{String(field.value)}</TableCell>
+                  <TableCell className="text-sm">
+                    {field.isGeo ? formatGeoValue(field.value) : String(field.value)}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

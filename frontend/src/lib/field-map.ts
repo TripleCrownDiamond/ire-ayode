@@ -1,4 +1,4 @@
-import { isImageValue, isFileValue } from "@/lib/attachments";
+import { isImageValue, isFileValue, looksLikeFilename } from "@/lib/attachments";
 
 // Fields to hide from display (technical metadata)
 const HIDDEN_PREFIXES = [
@@ -106,17 +106,23 @@ function isImageByKey(key: string): boolean {
  */
 function detectMedia(key: string, value: any): { isImage: boolean; isFile: boolean } {
   if (typeof value !== "string" || !value.trim()) return { isImage: false, isFile: false };
+
+  // Un champ géographique n'est jamais un média : ses coordonnées
+  // (« 8.0508043 2.5049482 204.2 3.766 ») ressemblent à un nom de fichier.
+  if (isGeoField(key) || isParcelleField(key)) return { isImage: false, isFile: false };
+
   if (isImageByValue(value)) return { isImage: true, isFile: false };
+
   if (isImageByKey(key)) {
-    // Clé média : on l'affiche comme image même si l'extension est inconnue,
-    // sauf pour les formats clairement non affichables.
-    if (/\.(pdf|doc|docx|xls|xlsx|csv|zip|mp3|mp4|3gp|m4a|wav|ogg)(\?|$)/i.test(value))
-      return { isImage: false, isFile: true };
-    // La valeur doit contenir un point (nom de fichier) — un « oui/non » ou un
-    // libellé de choix ne doit jamais devenir une image cassée.
-    if (isFileValue(value) || (value.includes(".") && !/\s/.test(value)))
-      return { isImage: true, isFile: false };
+    // Format explicitement non affichable → lien de téléchargement
+    if (isFileValue(value)) return { isImage: false, isFile: true };
+    // Clé média + nom de fichier plausible : on tente l'affichage même si
+    // l'extension n'est pas reconnue (certains formulaires exportent des
+    // signatures sans extension standard).
+    if (looksLikeFilename(value)) return { isImage: true, isFile: false };
+    return { isImage: false, isFile: false };
   }
+
   if (isFileValue(value)) return { isImage: false, isFile: true };
   return { isImage: false, isFile: false };
 }

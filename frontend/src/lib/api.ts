@@ -108,6 +108,110 @@ export async function restoreSubmission(id: number) {
   return res.json();
 }
 
+/** Supprime un formulaire et ses soumissions (suppression logique, réversible). */
+export async function deleteForm(uid: string, reason?: string) {
+  const res = await fetch(`${API_BASE}/forms/${uid}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || "Suppression impossible");
+  }
+  return res.json();
+}
+
+export async function restoreForm(uid: string) {
+  const res = await fetch(`${API_BASE}/forms/${uid}?action=restore`, { method: "POST" });
+  if (!res.ok) throw new Error("Restauration impossible");
+  return res.json();
+}
+
+// ---- Producteurs ----
+
+export async function fetchProducers(search?: string) {
+  const q = search?.trim() ? `?q=${encodeURIComponent(search.trim())}` : "";
+  const res = await fetch(`${API_BASE}/producteurs${q}`);
+  if (!res.ok) throw new Error("Chargement des producteurs impossible");
+  return res.json();
+}
+
+export async function fetchProducer(id: number) {
+  const res = await fetch(`${API_BASE}/producteurs/${id}`);
+  if (!res.ok) throw new Error("Producteur introuvable");
+  return res.json();
+}
+
+/** Crée un producteur. Sans `code`, la plateforme en attribue un (PR-0001…). */
+export async function createProducer(input: Record<string, unknown>) {
+  const res = await fetch(`${API_BASE}/producteurs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || "Creation impossible");
+  }
+  return res.json();
+}
+
+export async function updateProducer(id: number, input: Record<string, unknown>) {
+  const res = await fetch(`${API_BASE}/producteurs/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error("Mise a jour impossible");
+  return res.json();
+}
+
+/** Rattache une soumission a un producteur (existant ou cree a la volee). */
+export async function linkSubmissionToProducer(
+  submissionId: number,
+  payload: Record<string, unknown>
+) {
+  const res = await fetch(`${API_BASE}/submissions/${submissionId}/producer`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || "Rattachement impossible");
+  }
+  return res.json();
+}
+
+/** Rattache toutes les fiches dont le formulaire porte deja un code producteur. */
+export async function autoLinkProducers(formUid?: string) {
+  const q = formUid ? `&form=${encodeURIComponent(formUid)}` : "";
+  const res = await fetch(`${API_BASE}/producteurs?action=autolink${q}`, { method: "POST" });
+  if (!res.ok) throw new Error("Rattachement automatique impossible");
+  return res.json();
+}
+
+// ---- Parcelles ----
+
+export async function fetchParcels(producerId?: number, search?: string) {
+  const params = new URLSearchParams();
+  if (producerId) params.set("producer", String(producerId));
+  if (search?.trim()) params.set("q", search.trim());
+  const qs = params.toString();
+  const res = await fetch(`${API_BASE}/parcelles${qs ? `?${qs}` : ""}`);
+  if (!res.ok) throw new Error("Chargement des parcelles impossible");
+  return res.json();
+}
+
+/** (Re)construit le registre des parcelles a partir des fiches rattachees. */
+export async function syncParcels(producerId?: number) {
+  const q = producerId ? `&producer=${producerId}` : "";
+  const res = await fetch(`${API_BASE}/parcelles?action=sync${q}`, { method: "POST" });
+  if (!res.ok) throw new Error("Synchronisation des parcelles impossible");
+  return res.json();
+}
+
 /** Lance un lot d'archivage des médias dans le stockage local. */
 export async function archiveMedia(limit = 25, formUid?: string) {
   const params = new URLSearchParams({ limit: String(limit) });

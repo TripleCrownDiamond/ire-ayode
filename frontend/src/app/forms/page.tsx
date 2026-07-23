@@ -14,7 +14,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { RefreshCw, ArrowRight, Loader2 } from "lucide-react";
+import { FormMissingBanner } from "@/components/form-missing-banner";
+import { RefreshCw, ArrowRight, Loader2, Archive } from "lucide-react";
 
 interface Form {
   uid: string;
@@ -25,6 +26,8 @@ interface Form {
   date_created: string;
   status: string;
   deployment_active: boolean;
+  missing_on_kobo?: boolean;
+  kobo_last_seen_at?: string | null;
 }
 
 export default function FormsPage() {
@@ -58,6 +61,8 @@ export default function FormsPage() {
     setSyncing(false);
   };
 
+  const missingForms = forms.filter((f) => f.missing_on_kobo);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -72,6 +77,18 @@ export default function FormsPage() {
           {syncing ? "Sync..." : "Synchroniser"}
         </Button>
       </div>
+
+      {/* Formulaires disparus de Kobo : suppression proposee, jamais imposee */}
+      {missingForms.map((f) => (
+        <FormMissingBanner
+          key={f.uid}
+          uid={f.uid}
+          name={f.name}
+          submissionCount={f.submission_count}
+          lastSeenAt={f.kobo_last_seen_at}
+          onDeleted={load}
+        />
+      ))}
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
@@ -104,9 +121,22 @@ export default function FormsPage() {
                   className={`cursor-pointer hover:bg-muted/50 ${i % 2 === 1 ? "bg-muted/20" : ""}`}
                 >
                   <TableCell>
-                    <Link href={`/forms/${f.uid}`} className="font-medium hover:text-primary transition-colors">
+                    <Link
+                      href={`/forms/${f.uid}`}
+                      className="font-medium hover:text-primary transition-colors"
+                    >
                       {f.name}
                     </Link>
+                    {f.missing_on_kobo && (
+                      <Badge
+                        variant="outline"
+                        title="N'existe plus sur KoboToolbox - conserve dans la plateforme"
+                        className="ml-2 text-[10px] py-0 px-1.5 border-amber-300 text-amber-700 bg-amber-50 gap-1"
+                      >
+                        <Archive className="h-3 w-3" />
+                        Absent de Kobo
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{f.owner}</TableCell>
                   <TableCell className="text-center">

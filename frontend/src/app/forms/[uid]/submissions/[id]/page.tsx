@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -12,6 +12,7 @@ import {
 } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { buildAttachmentIndex, resolveAttachment } from "@/lib/attachments";
+import { ProducerLink } from "@/components/producer-link";
 import { KoboImage } from "@/components/kobo-image";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -84,21 +85,25 @@ export default function SubmissionPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  const reload = useCallback(async () => {
+    try {
+      const s = await fetchSubmission(id);
+      setSub(s);
+      setValidationStatus(toValidationStatus(s.validated || "pending"));
+      setNotes(s.notes || "");
+    } catch (e) {
+      console.error(e);
+    }
+  }, [id]);
+
   useEffect(() => {
     if (!uid || !id) return;
     (async () => {
       setLoading(true);
-      try {
-        const s = await fetchSubmission(id);
-        setSub(s);
-        setValidationStatus(toValidationStatus(s.validated || "pending"));
-        setNotes(s.notes || "");
-      } catch (e) {
-        console.error(e);
-      }
+      await reload();
       setLoading(false);
     })();
-  }, [uid, id]);
+  }, [uid, id, reload]);
 
   const handleValidationChange = async (status: string) => {
     const validated = toValidationStatus(status);
@@ -732,6 +737,15 @@ export default function SubmissionPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* Rattachement au référentiel producteurs */}
+          <ProducerLink
+            submissionId={id}
+            producer={sub.producer}
+            linkSource={sub.producer_source}
+            data={data}
+            onChanged={reload}
+          />
 
           {/* Full map if no parcelle in left column */}
           {mapParcelles.length > 0 && (!grouped.parcelle || grouped.parcelle.length === 0) && (
