@@ -18,7 +18,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ArrowLeft, RefreshCw, MapPin, Users, Download, FileCode, Map, FileText } from "lucide-react";
+import { ArrowLeft, RefreshCw, MapPin, Users, Download, FileCode, Map, FileText, Loader2 } from "lucide-react";
 
 export default function FormPage() {
   const params = useParams();
@@ -104,7 +104,11 @@ export default function FormPage() {
     .filter((p) => p.points.length > 0);
 
   if (loading)
-    return <div className="text-center py-20 text-muted-foreground">Chargement...</div>;
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
   if (!form)
     return <div className="text-center py-20 text-muted-foreground">Formulaire introuvable</div>;
 

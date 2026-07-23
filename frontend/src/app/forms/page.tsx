@@ -14,7 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { RefreshCw, ArrowRight } from "lucide-react";
+import { RefreshCw, ArrowRight, Loader2 } from "lucide-react";
 
 interface Form {
   uid: string;
@@ -74,7 +74,9 @@ export default function FormsPage() {
       </div>
 
       {loading ? (
-        <div className="text-center py-20 text-muted-foreground">Chargement...</div>
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
       ) : forms.length === 0 ? (
         <Card className="py-12 text-center">
           <CardContent className="p-6 text-muted-foreground">

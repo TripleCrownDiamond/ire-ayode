@@ -36,7 +36,7 @@ interface UserRow {
 }
 
 export default function AdminUsersPage() {
-  const { user, canRead, canEdit, isAdmin } = useAuth();
+  const { user, loading: authLoading, canRead, canEdit, isAdmin } = useAuth();
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -207,6 +207,14 @@ export default function AdminUsersPage() {
     setShowAddForm(false);
     loadUsers();
   };
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (!canRead("admin")) {
     return (

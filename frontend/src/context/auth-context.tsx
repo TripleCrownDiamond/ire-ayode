@@ -40,27 +40,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsAdmin(data.is_admin || false);
       }
     } catch {
-      // Pas de permissions → accès refusé
       setPermissions(DEFAULT_PERMISSIONS);
       setIsAdmin(false);
     }
   }, []);
 
   useEffect(() => {
-    // Récupérer la session initiale
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setUser(session?.user ?? null);
-      if (session?.user) refreshPermissions();
+      if (session?.user) {
+        await refreshPermissions();
+      }
       setLoading(false);
     });
 
-    // Écouter les changements de session
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setUser(session?.user ?? null);
       if (session?.user) {
-        refreshPermissions();
+        await refreshPermissions();
       } else {
         setPermissions(DEFAULT_PERMISSIONS);
         setIsAdmin(false);
@@ -97,7 +96,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
       options: {
-        // Redirige vers le dashboard après confirmation
         emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });
