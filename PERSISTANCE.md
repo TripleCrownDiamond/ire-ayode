@@ -20,12 +20,11 @@ soumissions et signale celles qui ont disparu de Kobo (`missing_on_kobo`).
 ### 1. Appliquer la migration
 
 ```bash
-node scripts/apply-migration.js supabase/migrations/002_persistance_locale.sql
+npm run migrate
 ```
 
-Si l'exécution automatique échoue (la fonction `exec_sql` n'existe pas par
-défaut), ouvrez le SQL Editor du projet Supabase et collez le contenu de
-`supabase/migrations/002_persistance_locale.sql`.
+Voir [MIGRATIONS.md](MIGRATIONS.md) — la commande applique tout ce qui manque
+et ne refait jamais ce qui est déjà en place.
 
 La migration ajoute :
 
