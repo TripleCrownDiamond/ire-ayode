@@ -1,0 +1,13 @@
+{
+  "name": "platform-irede",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Plateforme agricole Ire Ayode — synchronisation KoboToolbox",
+  "scripts": {
+    "migrate": "node scripts/migrate.js",
+    "migrate:status": "node scripts/migrate.js --status",
+    "make-admin": "node scripts/make-admin.js",
+    "dev": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend"
+  }
+}

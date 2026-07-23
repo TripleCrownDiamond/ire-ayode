@@ -115,9 +115,7 @@ La page **Parcelles** propose la vue liste et la vue carte, et le bouton
 ## Mise en service
 
 ```bash
-node scripts/apply-migration.js supabase/migrations/004_identifiants_producteurs.sql
-node scripts/apply-migration.js supabase/migrations/005_codes_et_parcelles.sql
-node scripts/apply-migration.js supabase/migrations/006_recalcul_codes.sql
+npm run migrate
 ```
 
 Puis, dans l'interface :
