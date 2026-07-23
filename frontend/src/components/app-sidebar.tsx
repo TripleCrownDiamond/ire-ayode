@@ -33,7 +33,7 @@ const links: { href: string; label: string; icon: React.ElementType; module: Mod
 export function AppSidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, loading, isAdmin, canRead, signOut } = useAuth();
+  const { user, loading, isAdmin, canRead, signOut, refreshPermissions } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -156,6 +156,13 @@ export function AppSidebar() {
               </p>
             </div>
           </Link>
+          <button
+            onClick={() => refreshPermissions()}
+            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          >
+            <RefreshCw className="h-4 w-4 shrink-0" />
+            <span>Actualiser les permissions</span>
+          </button>
           <button
             onClick={handleSignOut}
             disabled={signingOut}
