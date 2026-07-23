@@ -7,6 +7,8 @@
     "migrate": "node scripts/migrate.js",
     "migrate:status": "node scripts/migrate.js --status",
     "make-admin": "node scripts/make-admin.js",
+    "confirm-users": "node scripts/confirm-all-users.js",
+    "confirm-users:apply": "node scripts/confirm-all-users.js --confirm",
     "dev": "npm run dev --prefix frontend",
     "build": "npm run build --prefix frontend"
   },
