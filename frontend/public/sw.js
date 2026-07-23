@@ -1,13 +1,16 @@
-const CACHE_NAME = "ire-ayode-v1";
+// Version — changer à chaque déploiement pour vider le cache
+const CACHE_VERSION = "v2";
+const CACHE_NAME = "ire-ayode-" + CACHE_VERSION;
 
 self.addEventListener("install", () => {
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
+  // Supprimer TOUS les anciens caches
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+      Promise.all(keys.map((k) => caches.delete(k)))
     )
   );
   self.clients.claim();
@@ -15,11 +18,11 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
-  // API calls + navigation: network only
-  if (request.url.includes("/api/") || request.mode === "navigate") {
+  // Tout ce qui n'est pas un asset statique : réseau uniquement
+  if (request.mode === "navigate" || request.url.includes("/api/") || request.url.includes("/_next/data/")) {
     return;
   }
-  // Static assets only: cache first, then network
+  // Assets statiques uniquement : cache puis réseau
   event.respondWith(
     caches.match(request).then((cached) => cached || fetch(request))
   );
