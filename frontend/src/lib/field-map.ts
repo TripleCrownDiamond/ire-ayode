@@ -8,6 +8,12 @@ const HIDDEN_PREFIXES = [
 
 const HIDDEN_EXACT = ["_id"];
 
+// Patterns that identify image fields by their KEY (not value)
+const IMAGE_KEY_PATTERNS = [
+  /photo/i, /signature/i, /image/i, /picture/i, /img/i,
+  /camera/i, /capture/i, /photo/i,
+];
+
 // Field categories for grouping
 export const FIELD_GROUPS = {
   producteur: {
@@ -52,7 +58,7 @@ export const FIELD_GROUPS = {
     label: "Photos",
     icon: "Camera",
     color: "purple",
-    patterns: [/\.jpg$/i, /\.jpeg$/i, /\.png$/i, /\.gif$/i, /\.webp$/i],
+    patterns: [/photo/i, /image/i, /picture/i, /img/i, /camera/i, /capture/i],
   },
   signature: {
     label: "Signatures",
@@ -72,8 +78,12 @@ export interface FieldInfo {
   label: string;
 }
 
-function isImageField(value: any): boolean {
-  return typeof value === "string" && /\.(jpg|jpeg|png|gif|webp)/i.test(value);
+function isImageByValue(value: any): boolean {
+  return typeof value === "string" && /\.(jpg|jpeg|png|gif|webp|bmp|tiff)/i.test(value);
+}
+
+function isImageByKey(key: string): boolean {
+  return IMAGE_KEY_PATTERNS.some((p) => p.test(key));
 }
 
 function isGeoField(key: string): boolean {
@@ -116,11 +126,14 @@ export function parseFields(data: Record<string, any>): FieldInfo[] {
         HIDDEN_EXACT.includes(key) ||
         HIDDEN_PREFIXES.some((p) => key.startsWith(p));
 
+      // Detect images by value extension OR by field key pattern
+      const isImage = isImageByValue(value) || isImageByKey(key);
+
       return {
         key,
         value,
         group: classifyField(key),
-        isImage: isImageField(value),
+        isImage,
         isGeo: isGeoField(key),
         isHidden,
         label: cleanLabel(key),
@@ -148,10 +161,12 @@ export function getMainInfo(fields: FieldInfo[]) {
   const cooperative = fields.find((f) => /coop.*rative/i.test(f.key));
   const technicien = fields.find((f) => /technicien/i.test(f.key));
   const superficie = fields.find((f) => /superficie.*l.*exploitation/i.test(f.key));
-  const photo = fields.find((f) => f.isImage && /producteur/i.test(f.key));
+  // Photo: image field with "producteur" or "photo" in key
+  const photo = fields.find((f) => f.isImage && /producteur|photo/i.test(f.key));
+  // Signature: image field with "signature" in key
   const signature = fields.find((f) => f.isImage && /signature/i.test(f.key));
 
   return { name, genre, commune, village, cooperative, technicien, superficie, photo, signature };
 }
 
-export { isParcelleField, isGeoField, isImageField, cleanLabel };
+export { isParcelleField, isGeoField, isImageByValue as isImageField, cleanLabel };
