@@ -655,7 +655,7 @@ export default function SubmissionPage() {
         <div className="lg:col-span-2 space-y-4">
           {/* Photos */}
           {imageFields.length > 0 && (
-            <Card>
+            <Card className="overflow-hidden">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Camera className="h-4 w-4 text-purple-500" />
@@ -750,7 +750,7 @@ export default function SubmissionPage() {
 
           {/* Full map if no parcelle in left column */}
           {mapParcelles.length > 0 && (!grouped.parcelle || grouped.parcelle.length === 0) && (
-            <Card>
+            <Card className="overflow-hidden">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <MapPin className="h-4 w-4" />

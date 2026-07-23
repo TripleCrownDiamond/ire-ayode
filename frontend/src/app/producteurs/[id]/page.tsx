@@ -180,10 +180,10 @@ export default function ProducteurPage() {
 
       {/* Identité */}
       <Card className="border-l-4 border-l-blue-500">
-        <CardHeader className="pl-5 flex-row items-start justify-between space-y-0">
-          <CardTitle className="flex items-center gap-2 text-xl">
-            <User className="h-5 w-5 text-blue-500" />
-            {producer.name || producer.code}
+        <CardHeader className="pl-5 flex-row items-start justify-between space-y-0 overflow-hidden">
+          <CardTitle className="flex items-center gap-2 text-lg sm:text-xl min-w-0 flex-1">
+            <User className="h-5 w-5 text-blue-500 shrink-0" />
+            <span className="truncate">{producer.name || producer.code}</span>
           </CardTitle>
           {editing ? (
             <div className="flex gap-2">

@@ -138,7 +138,7 @@ export default function AdminDataPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Données & archivage</h1>
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Données & archivage</h1>
         <p className="text-muted-foreground mt-1 text-sm">
           Les soumissions et leurs médias restent dans la plateforme même s&apos;ils
           disparaissent de KoboToolbox. Seule une suppression explicite les retire.
@@ -237,7 +237,7 @@ export default function AdminDataPage() {
                   <span className="font-medium text-sm truncate flex-1 min-w-[120px]">
                     {producerName(row.data) || "—"}
                   </span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs text-muted-foreground truncate max-w-[300px]">
                     Supprimée le {new Date(row.deleted_at).toLocaleDateString("fr-FR")}
                     {row.deleted_by ? ` par ${row.deleted_by}` : ""}
                     {row.delete_reason ? ` — ${row.delete_reason}` : ""}

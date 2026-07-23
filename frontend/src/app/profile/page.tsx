@@ -162,8 +162,8 @@ export default function ProfilePage() {
     <div className="max-w-2xl mx-auto space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <User className="h-6 w-6 text-primary" />
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
+          <User className="h-6 w-6 text-primary shrink-0" />
           Mon profil
         </h1>
         <p className="text-muted-foreground mt-1">
