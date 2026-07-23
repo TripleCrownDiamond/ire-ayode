@@ -66,7 +66,7 @@ export function getMediaUrl(uid: string, filename: string, downloadUrl?: string)
   if (downloadUrl) {
     return `${API_BASE}/media/${uid}/${encodeURIComponent(filename)}?url=${encodeURIComponent(downloadUrl)}`;
   }
-  // Fallback: form media via kf.kobotoolbox.org
+  // No downloadUrl: proxy tries kf + kc automatically
   const encodedPath = filename.split("/").map(encodeURIComponent).join("/");
   return `${API_BASE}/media/${uid}/${encodedPath}`;
 }
