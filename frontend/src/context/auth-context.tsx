@@ -1,7 +1,6 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 import { DEFAULT_PERMISSIONS, type Module, type UserPermissions } from "@/lib/permissions";
@@ -29,7 +28,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [permissionsLoaded, setPermissionsLoaded] = useState(false);
   const [permissions, setPermissions] = useState<UserPermissions>(DEFAULT_PERMISSIONS);
   const [isAdmin, setIsAdmin] = useState(false);
-  const pathname = usePathname();
 
   const supabase = createClient();
 
@@ -50,13 +48,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setPermissionsLoaded(true);
   }, []);
-
-  // Recharger les permissions à chaque changement de page
-  useEffect(() => {
-    if (user && permissionsLoaded) {
-      refreshPermissions();
-    }
-  }, [pathname]);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
