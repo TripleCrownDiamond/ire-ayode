@@ -64,10 +64,9 @@ export async function updateSubmissionData(id: number, data: Record<string, unkn
 
 export function getMediaUrl(uid: string, filename: string, downloadUrl?: string) {
   if (downloadUrl) {
-    // Avec ?url= on encode le filename car c'est un segment de route, pas un chemin
     return `${API_BASE}/media/${uid}/${encodeURIComponent(filename)}?url=${encodeURIComponent(downloadUrl)}`;
   }
-  // Sans ?url=, le filename est passé brut pour que [...filename] catch-all puisse
-  // gérer les chemins comme "form/media/photo.jpg"
-  return `${API_BASE}/media/${uid}/${filename}`;
+  // Fallback: form media via kf.kobotoolbox.org
+  const encodedPath = filename.split("/").map(encodeURIComponent).join("/");
+  return `${API_BASE}/media/${uid}/${encodedPath}`;
 }
