@@ -13,27 +13,34 @@ export async function GET() {
 
   const admin = createAdmin();
 
-  const { data: perms, error } = await admin
+  // Requête 1 : is_admin + permissions (peut échouer si la table est vide)
+  const { data: perms } = await admin
     .from("user_permissions")
-    .select("is_admin, permissions, is_active")
+    .select("is_admin, permissions")
     .eq("user_id", user.id)
     .maybeSingle();
 
-  // Si la ligne n'existe pas encore (trigger pas encore firing), on renvoie les défauts
-  if (error || !perms) {
-    return NextResponse.json({
-      is_admin: false,
-      permissions: DEFAULT_PERMISSIONS,
-    });
+  // Requête 2 : is_active séparément (colonne peut être absente)
+  let isActive = true;
+  try {
+    const { data: activeRow } = await admin
+      .from("user_permissions")
+      .select("is_active")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (activeRow && activeRow.is_active === false) {
+      isActive = false;
+    }
+  } catch {
+    // Colonne is_active absente — on considère le compte actif
   }
 
-  // Compte suspendu
-  if (perms.is_active === false) {
+  if (!isActive) {
     return NextResponse.json({ error: "Compte suspendu" }, { status: 403 });
   }
 
   return NextResponse.json({
-    is_admin: !!perms.is_admin,
-    permissions: perms.permissions ?? DEFAULT_PERMISSIONS,
+    is_admin: !!perms?.is_admin,
+    permissions: perms?.permissions ?? DEFAULT_PERMISSIONS,
   });
 }
