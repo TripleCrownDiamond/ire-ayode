@@ -90,9 +90,22 @@ export async function deleteForm(
   uid: string,
   deletedBy: string,
   reason?: string
-): Promise<{ submissions: number } | null> {
+): Promise<{ submissions: number } | { error: string }> {
   const supabase = await getSupabase();
   const now = new Date().toISOString();
+
+  // Le formulaire existe-t-il, et est-il encore actif ? Sans cette lecture,
+  // un échec technique et un formulaire déjà supprimé donnaient le même
+  // résultat, et donc le même message trompeur.
+  const { data: form, error: readError } = await supabase
+    .from("forms")
+    .select("uid, deleted_at")
+    .eq("uid", uid)
+    .maybeSingle();
+
+  if (readError) return { error: `Lecture du formulaire impossible : ${readError.message}` };
+  if (!form) return { error: "Formulaire introuvable" };
+  if (form.deleted_at) return { error: "Formulaire déjà supprimé" };
 
   const { count } = await supabase
     .from("submissions")
@@ -111,7 +124,7 @@ export async function deleteForm(
     .eq("form_uid", uid)
     .is("deleted_at", null);
 
-  if (subError) return null;
+  if (subError) return { error: `Suppression des soumissions : ${subError.message}` };
 
   const { error: formError } = await supabase
     .from("forms")
@@ -119,7 +132,7 @@ export async function deleteForm(
     .eq("uid", uid)
     .is("deleted_at", null);
 
-  if (formError) return null;
+  if (formError) return { error: `Suppression du formulaire : ${formError.message}` };
 
   await supabase.from("sync_logs").insert({
     action: "delete_form",

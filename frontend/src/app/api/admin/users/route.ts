@@ -32,11 +32,27 @@ export async function GET() {
     return NextResponse.json({ error: authError.message }, { status: 500 });
   }
 
+  // `is_active` est lue à part : sur une base antérieure à la migration 007
+  // la colonne peut manquer, et une requête groupée échouerait entièrement —
+  // la liste des utilisateurs apparaîtrait alors vide de tout droit.
   const { data: allPerms } = await admin
     .from("user_permissions")
-    .select("user_id, is_admin, is_active, permissions");
+    .select("user_id, is_admin, permissions");
 
-  const permsMap = new Map(allPerms?.map((p) => [p.user_id, p]) ?? []);
+  const { data: activeRows } = await admin
+    .from("user_permissions")
+    .select("user_id, is_active");
+
+  const activeMap = new Map(
+    (activeRows ?? []).map((r: { user_id: string; is_active: boolean }) => [
+      r.user_id,
+      r.is_active,
+    ])
+  );
+
+  const permsMap = new Map(
+    (allPerms ?? []).map((p) => [p.user_id, { ...p, is_active: activeMap.get(p.user_id) }])
+  );
 
   const users = (authUsers?.users ?? []).map((u) => {
     const p = permsMap.get(u.id);

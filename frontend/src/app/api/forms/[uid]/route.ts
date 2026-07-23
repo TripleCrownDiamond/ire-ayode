@@ -44,11 +44,11 @@ export async function DELETE(
     }
 
     const result = await deleteForm(uid, admin.email, reason);
-    if (!result) {
-      return NextResponse.json(
-        { error: "Formulaire introuvable ou deja supprime" },
-        { status: 404 }
-      );
+    if ("error" in result) {
+      // La cause réelle est remontée telle quelle : un échec technique ne doit
+      // pas se déguiser en « formulaire introuvable ».
+      const notFound = /introuvable|déjà supprimé/i.test(result.error);
+      return NextResponse.json({ error: result.error }, { status: notFound ? 404 : 500 });
     }
 
     return NextResponse.json({
