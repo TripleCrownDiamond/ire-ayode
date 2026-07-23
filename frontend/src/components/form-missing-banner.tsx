@@ -89,7 +89,7 @@ export function FormMissingBanner({
                 Supprimer « {name} » ?
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="p-4 sm:p-6 space-y-3">
               <p className="text-sm text-muted-foreground">
                 Le formulaire et ses{" "}
                 <span className="font-semibold text-foreground">

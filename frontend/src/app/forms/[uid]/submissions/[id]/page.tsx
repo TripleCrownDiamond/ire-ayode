@@ -311,17 +311,17 @@ export default function SubmissionPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+        <div className="flex items-center gap-3 sm:gap-4">
           <Link href={`/forms/${uid}`}>
             <Button variant="ghost" size="sm" className="gap-1">
-              <ArrowLeft className="h-4 w-4" /> Retour
+              <ArrowLeft className="h-4 w-4" /> <span className="hidden sm:inline">Retour</span>
             </Button>
           </Link>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight">#{sub.kobo_id}</h1>
-              <Badge variant="outline" className="text-xs">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight">#{sub.kobo_id}</h1>
+              <Badge variant="outline" className="text-[10px] sm:text-xs">
                 {sub.submitted_at
                   ? new Date(sub.submitted_at).toLocaleString("fr-FR")
                   : ""}
@@ -329,27 +329,28 @@ export default function SubmissionPage() {
               <ValidationBadge status={validationStatus} />
             </div>
             {sub.submitted_by && (
-              <p className="text-muted-foreground text-sm mt-1">
+              <p className="text-muted-foreground text-xs sm:text-sm mt-1">
                 Soumis par {sub.submitted_by}
               </p>
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
           {editing ? (
             <>
               <Button onClick={cancelEditing} variant="ghost" size="sm" className="gap-1">
-                <X className="h-4 w-4" /> Annuler
+                <X className="h-4 w-4" /> <span className="hidden sm:inline">Annuler</span>
               </Button>
               <Button onClick={handleSaveEdit} disabled={saving} size="sm" className="gap-1">
                 <Save className="h-4 w-4" />
-                {saving ? "Enregistrement..." : "Enregistrer"}
+                <span className="hidden sm:inline">{saving ? "Enregistrement..." : "Enregistrer"}</span>
+                <span className="sm:hidden">{saving ? "..." : "OK"}</span>
               </Button>
             </>
           ) : (
             <>
               <Button onClick={startEditing} variant="outline" size="sm" className="gap-1.5">
-                <Edit3 className="h-4 w-4" /> Modifier
+                <Edit3 className="h-4 w-4" /> <span className="hidden sm:inline">Modifier</span>
               </Button>
               <Button
                 onClick={handleValidate}
@@ -413,7 +414,7 @@ export default function SubmissionPage() {
                 Supprimer la soumission #{sub.kobo_id} ?
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="p-4 sm:p-6 space-y-3">
               <p className="text-sm text-muted-foreground">
                 Elle disparaîtra de la plateforme
                 {info.name ? ` (${String(info.name.value)})` : ""}. La donnée reste
