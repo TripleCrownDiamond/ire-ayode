@@ -63,9 +63,9 @@ export function AppSidebar() {
     router.push("/login");
   };
 
-  // Filtrer les liens selon les permissions
+  // Filtrer les liens selon les permissions — Tableau de bord toujours visible
   const visibleLinks = links.filter((link) => {
-    // Les pages admin ne sont visibles que si l'utilisateur peut les lire
+    if (link.href === "/") return true; // toujours visible
     if (link.href.startsWith("/admin")) {
       return canRead("admin");
     }
