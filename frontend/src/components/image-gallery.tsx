@@ -26,6 +26,21 @@ export function ImageGallery({ images, formUid }: ImageGalleryProps) {
   const imgUrl = (img: GalleryImage) =>
     getMediaUrl(formUid, img.value, img.downloadUrl);
 
+  // Fallback: try direct Kobo URL if proxy fails
+  const handleError = (e: React.SyntheticEvent<HTMLImageElement>, img: GalleryImage) => {
+    const target = e.currentTarget;
+    // If proxy failed and we have a direct downloadUrl, try it directly
+    if (img.downloadUrl && target.src !== img.downloadUrl) {
+      target.src = img.downloadUrl;
+      return;
+    }
+    // Otherwise show unavailable
+    target.style.display = "none";
+    target.parentElement!.classList.add("bg-muted", "flex", "items-center", "justify-center");
+    target.parentElement!.innerHTML =
+      `<span class="text-muted-foreground text-xs text-center p-2">Image<br/>indisponible</span>`;
+  };
+
   return (
     <>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -39,14 +54,7 @@ export function ImageGallery({ images, formUid }: ImageGalleryProps) {
               src={imgUrl(img)}
               alt={img.key}
               className="w-full h-full object-cover"
-              onError={(e) => {
-                // Fallback visuel si l'image ne charge pas
-                const target = e.currentTarget;
-                target.style.display = "none";
-                target.parentElement!.classList.add("bg-muted", "flex", "items-center", "justify-center");
-                target.parentElement!.innerHTML =
-                  `<span class="text-muted-foreground text-xs text-center p-2">Image<br/>indisponible</span>`;
-              }}
+              onError={(e) => handleError(e, img)}
             />
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
               <ZoomIn className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow" />
@@ -75,6 +83,7 @@ export function ImageGallery({ images, formUid }: ImageGalleryProps) {
               src={imgUrl(selectedImage)}
               alt={selectedImage.key}
               className="max-w-full max-h-[85vh] object-contain rounded-lg"
+              onError={(e) => handleError(e, selectedImage)}
             />
             <div className="text-center mt-3 text-white text-sm">
               {selectedImage.key}

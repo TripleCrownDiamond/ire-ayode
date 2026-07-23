@@ -1,9 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { KoboClient } from "@/lib/kobo";
-
-const kobo = new KoboClient();
 
 const KOBO_TOKEN = process.env.KOBO_API_TOKEN || "";
+
+// KoboToolbox uses two servers:
+// - kf.kobotoolbox.org (form server) for forms/media
+// - kc.kobotoolbox.org (data server) for submission attachments
+const KOBO_KF_URL = (process.env.KOBO_API_URL || "https://kf.kobotoolbox.org").replace(/\/$/, "");
+const KOBO_KC_URL = KOBO_KF_URL.replace("kf.kobotoolbox.org", "kc.kobotoolbox.org");
 
 export async function GET(
   request: NextRequest,
@@ -15,11 +18,15 @@ export async function GET(
     // Si un ?url= est fourni, proxyer directement depuis l'URL Kobo (attachment submission)
     const proxyUrl = request.nextUrl.searchParams.get("url");
     if (proxyUrl) {
-      const resp = await fetch(proxyUrl, {
-        headers: {
-          Authorization: `Token ${KOBO_TOKEN}`,
-        },
-      });
+      // Kobo attachment URLs are often publicly accessible, try without auth first
+      let resp = await fetch(proxyUrl);
+
+      // If that fails, try with auth token
+      if (!resp.ok && KOBO_TOKEN) {
+        resp = await fetch(proxyUrl, {
+          headers: { Authorization: `Token ${KOBO_TOKEN}` },
+        });
+      }
 
       if (!resp.ok) {
         return NextResponse.json({ error: "Media not found" }, { status: 404 });
@@ -36,11 +43,26 @@ export async function GET(
 
     // Fallback: form media (images téléchargées dans le constructeur de formulaire)
     const filePath = filenameParts.join("/");
-    const { buffer, contentType } = await kobo.getMedia(uid, filePath);
 
+    // Try kf first, then kc
+    let resp = await fetch(`${KOBO_KF_URL}/api/v2/assets/${uid}/media/${filePath}`, {
+      headers: { Authorization: `Token ${KOBO_TOKEN}` },
+    });
+
+    if (!resp.ok) {
+      resp = await fetch(`${KOBO_KC_URL}/api/v2/assets/${uid}/media/${filePath}`, {
+        headers: { Authorization: `Token ${KOBO_TOKEN}` },
+      });
+    }
+
+    if (!resp.ok) {
+      return NextResponse.json({ error: "Media not found" }, { status: 404 });
+    }
+
+    const buffer = await resp.arrayBuffer();
     return new NextResponse(Buffer.from(buffer), {
       headers: {
-        "Content-Type": contentType,
+        "Content-Type": resp.headers.get("content-type") || "application/octet-stream",
         "Cache-Control": "public, max-age=86400, s-maxage=86400",
       },
     });
