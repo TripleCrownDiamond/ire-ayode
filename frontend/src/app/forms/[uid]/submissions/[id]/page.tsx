@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { fetchSubmission, getMediaUrl, updateSubmissionStatus, updateSubmissionData } from "@/lib/api";
+import {
+  fetchSubmission,
+  getMediaUrl,
+  updateSubmissionStatus,
+  updateSubmissionData,
+  deleteSubmission,
+} from "@/lib/api";
+import { useRouter } from "next/navigation";
 import { buildAttachmentIndex, resolveAttachment } from "@/lib/attachments";
 import { KoboImage } from "@/components/kobo-image";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +46,9 @@ import {
   Edit3,
   X,
   Loader2,
+  Trash2,
+  Archive,
+  AlertTriangle,
 } from "lucide-react";
 
 const GROUP_COLORS: Record<string, string> = {
@@ -58,6 +68,7 @@ function toValidationStatus(s: string): ValidationStatus {
 
 export default function SubmissionPage() {
   const params = useParams();
+  const router = useRouter();
   const uid = params.uid as string;
   const id = Number(params.id);
   const [sub, setSub] = useState<any>(null);
@@ -68,6 +79,10 @@ export default function SubmissionPage() {
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!uid || !id) return;
@@ -106,6 +121,21 @@ export default function SubmissionPage() {
       console.error("Failed to validate:", e);
     }
     setValidating(false);
+  };
+
+  // === Suppression ===
+  // Seule action qui retire une soumission : la synchronisation Kobo, elle,
+  // n'efface jamais rien.
+  const handleDelete = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteSubmission(id, deleteReason.trim() || undefined);
+      router.push(`/forms/${uid}`);
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : "Suppression impossible");
+      setDeleting(false);
+    }
   };
 
   // === Mode édition ===
@@ -327,10 +357,98 @@ export default function SubmissionPage() {
                 {validationStatus === "valid" ? "Validée ✓" : "Valider"}
               </Button>
               <ExportButton data={data} filename={`soumission_${sub.kobo_id}`} />
+              <Button
+                onClick={() => setConfirmDelete(true)}
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+              >
+                <Trash2 className="h-4 w-4" /> Supprimer
+              </Button>
             </>
           )}
         </div>
       </div>
+
+      {/* Conservée localement alors qu'elle a disparu de Kobo */}
+      {sub.missing_on_kobo && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardContent className="p-3 flex items-start gap-3 text-sm">
+            <Archive className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium text-amber-900">
+                Cette soumission n&apos;existe plus sur KoboToolbox
+              </p>
+              <p className="text-amber-800 mt-0.5">
+                Elle est conservée dans la plateforme
+                {sub.kobo_last_seen_at
+                  ? ` (vue pour la dernière fois le ${new Date(
+                      sub.kobo_last_seen_at
+                    ).toLocaleDateString("fr-FR")})`
+                  : ""}
+                . {sub.media_archived_at
+                  ? "Ses images ont été archivées localement."
+                  : "Ses images ne sont pas encore archivées localement."}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Confirmation de suppression */}
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={() => !deleting && setConfirmDelete(false)}
+        >
+          <Card className="max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base text-red-700">
+                <AlertTriangle className="h-5 w-5" />
+                Supprimer la soumission #{sub.kobo_id} ?
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Elle disparaîtra de la plateforme
+                {info.name ? ` (${String(info.name.value)})` : ""}. La donnée reste
+                récupérable en base par un administrateur ; elle n&apos;est pas
+                supprimée sur KoboToolbox.
+              </p>
+              <input
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="Motif de la suppression (optionnel)"
+                className="w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-red-200"
+              />
+              {deleteError && <p className="text-sm text-red-600">{deleteError}</p>}
+              <div className="flex justify-end gap-2 pt-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setConfirmDelete(false)}
+                  disabled={deleting}
+                >
+                  Annuler
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="bg-red-600 hover:bg-red-700 text-white gap-1.5"
+                >
+                  {deleting ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  {deleting ? "Suppression..." : "Supprimer"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Validation bar */}
       <Card className="border-primary/20 bg-primary/5">
@@ -378,6 +496,7 @@ export default function SubmissionPage() {
                       formUid={uid}
                       filename={String(info.photo.value)}
                       downloadUrls={findAttachmentUrls(info.photo.value, info.photo.key)}
+                      submissionId={id}
                       alt="Photo du producteur"
                       containerClassName="h-20 w-20 shrink-0 rounded-lg overflow-hidden border shadow-sm"
                       className="h-20 w-20 object-cover"
@@ -539,7 +658,7 @@ export default function SubmissionPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <ImageGallery images={imageFields} formUid={uid} columns={2} />
+                <ImageGallery images={imageFields} formUid={uid} submissionId={id} columns={2} />
               </CardContent>
             </Card>
           )}
@@ -561,7 +680,7 @@ export default function SubmissionPage() {
                   {signatureFields.map((f) => (
                     <a
                       key={f.key}
-                      href={getMediaUrl(uid, f.value, f.downloadUrls)}
+                      href={getMediaUrl(uid, f.value, f.downloadUrls, id)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="rounded-lg border overflow-hidden hover:border-primary/40 hover:shadow-sm transition-all block"
@@ -570,6 +689,7 @@ export default function SubmissionPage() {
                         formUid={uid}
                         filename={f.value}
                         downloadUrls={f.downloadUrls}
+                        submissionId={id}
                         alt={f.key}
                         containerClassName="h-24 w-full bg-white"
                         className="w-full h-24 object-contain p-2"
@@ -599,7 +719,7 @@ export default function SubmissionPage() {
                 {fileFields.map((f) => (
                   <a
                     key={f.key}
-                    href={getMediaUrl(uid, f.value, f.downloadUrls)}
+                    href={getMediaUrl(uid, f.value, f.downloadUrls, id)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 text-sm p-2 rounded-md border hover:bg-muted/50 transition-colors"

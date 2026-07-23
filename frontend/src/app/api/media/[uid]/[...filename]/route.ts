@@ -1,4 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { createAdmin } from "@/lib/supabase-admin";
+import { getArchivedMedia } from "@/lib/media-archive";
 
 const KOBO_TOKEN = process.env.KOBO_API_TOKEN || "";
 const KOBO_KF_URL = (process.env.KOBO_API_URL || "https://kf.kobotoolbox.org").replace(/\/$/, "");
@@ -84,7 +86,28 @@ export async function GET(
     // Kobo remplace les espaces par des "_" à l'upload
     const sanitized = basename.replace(/\s+/g, "_");
 
-    // 1. URL explicites issues des _attachments (plusieurs candidates possibles :
+    // 1. Copie locale archivée — servie en priorité.
+    //    C'est ce qui permet à une image de rester visible après la suppression
+    //    de la soumission sur KoboToolbox.
+    const submissionId = Number(request.nextUrl.searchParams.get("sub")) || undefined;
+    try {
+      const archived = await getArchivedMedia(createAdmin(), uid, filePath, submissionId);
+      if (archived) {
+        return new NextResponse(Buffer.from(archived.body), {
+          headers: {
+            "Content-Type": archived.contentType,
+            "Content-Length": String(archived.body.byteLength),
+            "Cache-Control": "public, max-age=604800, s-maxage=604800, immutable",
+            "X-Media-Source": "archive",
+          },
+        });
+      }
+    } catch {
+      // Archive indisponible (migration non appliquée, Storage HS) :
+      // on retombe sur Kobo plutôt que d'échouer.
+    }
+
+    // 2. URL explicites issues des _attachments (plusieurs candidates possibles :
     //    original, medium, large — Kobo ne génère pas toujours les miniatures).
     const proxyUrls = request.nextUrl.searchParams
       .getAll("url")
@@ -96,7 +119,7 @@ export async function GET(
       if (resp) return serve(resp, await resp.arrayBuffer(), filePath);
     }
 
-    // 2. Repli : reconstruire les chemins Kobo usuels
+    // 3. Repli : reconstruire les chemins Kobo usuels
     const attempts = [
       `${KOBO_KF_URL}/api/v2/assets/${uid}/media/${filePath}`,
       `${KOBO_KC_URL}/media/original?media_file=${encodeURIComponent(filePath)}`,

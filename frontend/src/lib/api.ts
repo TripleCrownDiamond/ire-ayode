@@ -72,7 +72,9 @@ export async function updateSubmissionData(id: number, data: Record<string, unkn
 export function getMediaUrl(
   uid: string,
   filename: string,
-  downloadUrls?: string | string[]
+  downloadUrls?: string | string[],
+  /** Id de la soumission — permet de retrouver directement la copie archivée */
+  submissionId?: number
 ) {
   const urls = (Array.isArray(downloadUrls) ? downloadUrls : downloadUrls ? [downloadUrls] : [])
     .filter(Boolean)
@@ -80,6 +82,43 @@ export function getMediaUrl(
   const path = filename
     ? filename.split("/").map(encodeURIComponent).join("/")
     : "attachment";
-  const query = urls.map((u) => `url=${encodeURIComponent(u)}`).join("&");
+  const params = urls.map((u) => `url=${encodeURIComponent(u)}`);
+  if (submissionId) params.unshift(`sub=${submissionId}`);
+  const query = params.join("&");
   return `${API_BASE}/media/${uid}/${path}${query ? `?${query}` : ""}`;
+}
+
+/** Supprime une soumission de la plateforme (suppression logique, réversible). */
+export async function deleteSubmission(id: number, reason?: string) {
+  const res = await fetch(`${API_BASE}/submissions/${id}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || "Suppression impossible");
+  }
+  return res.json();
+}
+
+export async function restoreSubmission(id: number) {
+  const res = await fetch(`${API_BASE}/submissions/${id}?action=restore`, { method: "POST" });
+  if (!res.ok) throw new Error("Restauration impossible");
+  return res.json();
+}
+
+/** Lance un lot d'archivage des médias dans le stockage local. */
+export async function archiveMedia(limit = 25, formUid?: string) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (formUid) params.set("form", formUid);
+  const res = await fetch(`${API_BASE}/media/archive?${params}`, { method: "POST" });
+  if (!res.ok) throw new Error("Archivage impossible");
+  return res.json();
+}
+
+export async function fetchArchiveStatus() {
+  const res = await fetch(`${API_BASE}/media/archive`);
+  if (!res.ok) throw new Error("Statut d'archivage indisponible");
+  return res.json();
 }

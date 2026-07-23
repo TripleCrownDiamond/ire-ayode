@@ -25,7 +25,9 @@ export async function PATCH(
         notes: notes || "",
         updated_at: new Date().toISOString(),
       })
-      .eq("id", Number(id));
+      .eq("id", Number(id))
+      // Une soumission mise à la corbeille ne doit plus être modifiable
+      .is("deleted_at", null);
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });

@@ -14,6 +14,7 @@ import {
   LogOut,
   ShieldCheck,
   UserCircle,
+  Database,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +23,7 @@ const links: { href: string; label: string; icon: React.ElementType; module: Mod
   { href: "/forms", label: "Formulaires", icon: FileText, module: "forms" },
   { href: "/map", label: "Carte", icon: Map, module: "map" },
   { href: "/admin/users", label: "Utilisateurs", icon: ShieldCheck, module: "admin" },
+  { href: "/admin/data", label: "Données & archivage", icon: Database, module: "admin" },
 ];
 
 export function AppSidebar() {
