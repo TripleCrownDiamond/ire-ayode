@@ -173,14 +173,19 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (body.permissions) {
-    // Fusionner avec les permissions existantes
+    // Fusionner avec les permissions existantes (deep merge par module)
     const { data: existing } = await admin
       .from("user_permissions")
       .select("permissions")
       .eq("user_id", targetId)
       .single();
 
-    const merged = { ...(existing?.permissions as Record<string, unknown> ?? {}), ...body.permissions };
+    const existingPerms = (existing?.permissions ?? {}) as Record<string, Record<string, boolean>>;
+    const newPerms = body.permissions as Record<string, Record<string, boolean>>;
+    const merged: Record<string, Record<string, boolean>> = { ...existingPerms };
+    for (const [mod, vals] of Object.entries(newPerms)) {
+      merged[mod] = { ...(merged[mod] ?? {}), ...vals };
+    }
     updateData.permissions = merged;
   }
 
