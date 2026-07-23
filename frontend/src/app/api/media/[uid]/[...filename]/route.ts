@@ -1,16 +1,41 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { KoboClient } from "@/lib/kobo";
 
 const kobo = new KoboClient();
 
+const KOBO_TOKEN = process.env.KOBO_API_TOKEN || "";
+
 export async function GET(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ uid: string; filename: string[] }> }
 ) {
   try {
-    const { uid, filename } = await params;
-    const filePath = filename.join("/");
+    const { uid, filename: filenameParts } = await params;
 
+    // Si un ?url= est fourni, proxyer directement depuis l'URL Kobo (attachment submission)
+    const proxyUrl = request.nextUrl.searchParams.get("url");
+    if (proxyUrl) {
+      const resp = await fetch(proxyUrl, {
+        headers: {
+          Authorization: `Token ${KOBO_TOKEN}`,
+        },
+      });
+
+      if (!resp.ok) {
+        return NextResponse.json({ error: "Media not found" }, { status: 404 });
+      }
+
+      const buffer = await resp.arrayBuffer();
+      return new NextResponse(Buffer.from(buffer), {
+        headers: {
+          "Content-Type": resp.headers.get("content-type") || "application/octet-stream",
+          "Cache-Control": "public, max-age=86400, s-maxage=86400",
+        },
+      });
+    }
+
+    // Fallback: form media (images téléchargées dans le constructeur de formulaire)
+    const filePath = filenameParts.join("/");
     const { buffer, contentType } = await kobo.getMedia(uid, filePath);
 
     return new NextResponse(Buffer.from(buffer), {

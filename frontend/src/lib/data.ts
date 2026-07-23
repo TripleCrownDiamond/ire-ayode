@@ -52,10 +52,20 @@ export interface Database {
 
 const DB_PATH = path.resolve(process.cwd(), "..", "backend", "db.json");
 
+// ---- Cache mémoire avec TTL ----
+const dbCache = new Map<string, { data: Database; time: number }>();
+const CACHE_TTL = 10_000; // 10 secondes
+
 function loadDB(): Database {
+  const cached = dbCache.get("db");
+  if (cached && Date.now() - cached.time < CACHE_TTL) {
+    return cached.data;
+  }
   try {
     if (fs.existsSync(DB_PATH)) {
-      return JSON.parse(fs.readFileSync(DB_PATH, "utf-8"));
+      const data = JSON.parse(fs.readFileSync(DB_PATH, "utf-8"));
+      dbCache.set("db", { data, time: Date.now() });
+      return data;
     }
   } catch {
     // Ignorer
@@ -63,9 +73,14 @@ function loadDB(): Database {
   return { forms: {}, submissions: {}, logs: [] };
 }
 
+function invalidateCache(): void {
+  dbCache.delete("db");
+}
+
 function saveDB(data: Database): void {
   try {
     fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
+    invalidateCache();
   } catch {
     // Ignorer en serverless (Vercel)
   }

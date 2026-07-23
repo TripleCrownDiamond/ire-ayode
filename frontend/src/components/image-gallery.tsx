@@ -4,8 +4,15 @@ import { useState } from "react";
 import { X, ZoomIn } from "lucide-react";
 import { getMediaUrl } from "@/lib/api";
 
+interface GalleryImage {
+  key: string;
+  value: string;
+  /** URL de téléchargement Kobo (attachment) — si fourni, proxy via ?url= */
+  downloadUrl?: string;
+}
+
 interface ImageGalleryProps {
-  images: { key: string; value: string }[];
+  images: GalleryImage[];
   formUid: string;
 }
 
@@ -16,32 +23,43 @@ export function ImageGallery({ images, formUid }: ImageGalleryProps) {
 
   const selectedImage = images.find((img) => img.value === selected);
 
+  const imgUrl = (img: GalleryImage) =>
+    getMediaUrl(formUid, img.value, img.downloadUrl);
+
   return (
     <>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-        {images.map(({ key, value }) => (
+        {images.map((img) => (
           <button
-            key={key}
-            onClick={() => setSelected(value)}
+            key={img.key}
+            onClick={() => setSelected(img.value)}
             className="group relative rounded-lg overflow-hidden border hover:shadow-md transition-shadow aspect-square"
           >
             <img
-              src={getMediaUrl(formUid, value)}
-              alt={key}
+              src={imgUrl(img)}
+              alt={img.key}
               className="w-full h-full object-cover"
+              onError={(e) => {
+                // Fallback visuel si l'image ne charge pas
+                const target = e.currentTarget;
+                target.style.display = "none";
+                target.parentElement!.classList.add("bg-muted", "flex", "items-center", "justify-center");
+                target.parentElement!.innerHTML =
+                  `<span class="text-muted-foreground text-xs text-center p-2">Image<br/>indisponible</span>`;
+              }}
             />
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
               <ZoomIn className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow" />
             </div>
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
-              <span className="text-xs text-white truncate block">{key}</span>
+              <span className="text-xs text-white truncate block">{img.key}</span>
             </div>
           </button>
         ))}
       </div>
 
       {/* Lightbox */}
-      {selected && (
+      {selected && selectedImage && (
         <div
           className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
           onClick={() => setSelected(null)}
@@ -54,12 +72,12 @@ export function ImageGallery({ images, formUid }: ImageGalleryProps) {
           </button>
           <div className="max-w-4xl max-h-[90vh] relative" onClick={(e) => e.stopPropagation()}>
             <img
-              src={getMediaUrl(formUid, selected)}
-              alt={selectedImage?.key || ""}
+              src={imgUrl(selectedImage)}
+              alt={selectedImage.key}
               className="max-w-full max-h-[85vh] object-contain rounded-lg"
             />
             <div className="text-center mt-3 text-white text-sm">
-              {selectedImage?.key}
+              {selectedImage.key}
             </div>
           </div>
         </div>

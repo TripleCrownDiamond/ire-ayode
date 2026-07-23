@@ -89,6 +89,14 @@ function cleanLabel(key: string): string {
     .replace(/group_[a-z0-9]+\//g, "")
     .replace(/_/g, " ")
     .replace(/\//g, " — ")
+    .replace(/\s+d\s+/g, " d'")
+    .replace(/\s+l\s+/g, " l'")
+    .replace(/\s+n\s+/g, " n'")
+    .replace(/\s+s\s+/g, " s'")
+    .replace(/\s+c\s+/g, " c'")
+    .replace(/\s+jusqu\s+/g, " jusqu'")
+    .replace(/\s+quelqu\s+/g, " quelqu'")
+    .replace(/\s+entr\s+/g, " entr'")
     .trim();
 }
 

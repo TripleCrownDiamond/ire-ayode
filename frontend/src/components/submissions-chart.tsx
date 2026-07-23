@@ -88,7 +88,7 @@ export function SubmissionsChart({ forms }: SubmissionChartProps) {
           </button>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-6">
         <div className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
             {chartType === "bar" ? (

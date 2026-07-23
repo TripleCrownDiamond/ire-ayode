@@ -55,15 +55,40 @@ CREATE TABLE IF NOT EXISTS sync_logs (
   time              TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 🔷 Rôles utilisateurs (pour auth future)
-CREATE TABLE IF NOT EXISTS user_roles (
+-- 🔷 Permissions utilisateurs (admin + modules)
+CREATE TABLE IF NOT EXISTS user_permissions (
   id                BIGSERIAL PRIMARY KEY,
-  user_id           UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  role              TEXT DEFAULT 'viewer'
-    CHECK (role IN ('admin', 'editor', 'viewer')),
+  user_id           UUID REFERENCES auth.users(id) ON DELETE CASCADE UNIQUE NOT NULL,
+  is_admin          BOOLEAN DEFAULT false,
+  is_active         BOOLEAN DEFAULT true,
+  permissions       JSONB NOT NULL DEFAULT '{
+    "dashboard": {"read": false, "edit": false},
+    "forms": {"read": false, "edit": false},
+    "map": {"read": false, "edit": false},
+    "sync": {"read": false, "edit": false},
+    "admin": {"read": false, "edit": false}
+  }'::jsonb,
   created_at        TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(user_id)
+  updated_at        TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Trigger : créer automatiquement les permissions à l'inscription
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  INSERT INTO public.user_permissions (user_id, is_admin)
+  VALUES (NEW.id, false);
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- =============================================================
 -- Index de performance

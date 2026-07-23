@@ -77,7 +77,7 @@ export default function FormsPage() {
         <div className="text-center py-20 text-muted-foreground">Chargement...</div>
       ) : forms.length === 0 ? (
         <Card className="py-12 text-center">
-          <CardContent className="text-muted-foreground">
+          <CardContent className="p-6 text-muted-foreground">
             Aucun formulaire. Synchronisez depuis KoboToolbox.
           </CardContent>
         </Card>
