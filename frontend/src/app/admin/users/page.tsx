@@ -236,9 +236,9 @@ export default function AdminUsersPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <ShieldCheck className="h-6 w-6 text-primary" />
-            Gestion des utilisateurs
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
+            <ShieldCheck className="h-6 w-6 text-primary shrink-0" />
+            <span className="truncate">Gestion des utilisateurs</span>
           </h1>
           <p className="text-muted-foreground mt-1">
             Gérez les accès et les permissions de chaque utilisateur

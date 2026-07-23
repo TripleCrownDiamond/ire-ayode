@@ -121,7 +121,7 @@ export default function ARattacherPage() {
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Fiches à rattacher</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Fiches à rattacher</h1>
           <p className="text-muted-foreground mt-1 text-sm">
             {total} fiche(s) sans producteur
           </p>

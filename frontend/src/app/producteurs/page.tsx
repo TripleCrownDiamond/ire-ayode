@@ -109,7 +109,7 @@ export default function ProducteursPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Producteurs</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Producteurs</h1>
           <p className="text-muted-foreground mt-1 text-sm">
             {producers.length} producteur(s) au référentiel
           </p>
