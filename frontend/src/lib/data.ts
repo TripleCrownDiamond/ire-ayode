@@ -28,6 +28,14 @@ export interface DBSubmission {
   data: Record<string, unknown>;
   validated?: string;
   notes?: string;
+  /** Supprimée explicitement par un utilisateur (NULL = active) */
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  /** N'existe plus sur KoboToolbox — conservée localement */
+  missing_on_kobo?: boolean;
+  kobo_last_seen_at?: string | null;
+  media_archived_at?: string | null;
+  media_count?: number;
 }
 
 export interface DBSyncLog {
@@ -77,13 +85,19 @@ export async function getForm(uid: string): Promise<DBForm | null> {
 export async function getSubmissions(
   formUid: string,
   skip = 0,
-  limit = 100
+  limit = 100,
+  options: { includeDeleted?: boolean } = {}
 ): Promise<{ count: number; results: DBSubmission[] }> {
   const supabase = await getSupabase();
-  const { data, error, count } = await supabase
+  let query = supabase
     .from("submissions")
     .select("*", { count: "exact", head: false })
-    .eq("form_uid", formUid)
+    .eq("form_uid", formUid);
+
+  // Les soumissions supprimées par un utilisateur sortent de toutes les vues.
+  if (!options.includeDeleted) query = query.is("deleted_at", null);
+
+  const { data, error, count } = await query
     .order("submitted_at", { ascending: false })
     .range(skip, skip + limit - 1);
 
@@ -91,16 +105,90 @@ export async function getSubmissions(
   return { count: count || (data?.length ?? 0), results: data || [] };
 }
 
-export async function getSubmission(id: number): Promise<DBSubmission | null> {
+export async function getSubmission(
+  id: number,
+  options: { includeDeleted?: boolean } = {}
+): Promise<DBSubmission | null> {
+  const supabase = await getSupabase();
+  let query = supabase.from("submissions").select("*").eq("id", id);
+  if (!options.includeDeleted) query = query.is("deleted_at", null);
+
+  const { data, error } = await query.maybeSingle();
+
+  if (error || !data) return null;
+  return data;
+}
+
+/**
+ * Suppression logique — la seule façon de retirer une soumission.
+ * La ligne est conservée en base : une suppression accidentelle reste
+ * réparable via restoreSubmission().
+ */
+export async function deleteSubmission(
+  id: number,
+  deletedBy: string,
+  reason?: string
+): Promise<boolean> {
+  const supabase = await getSupabase();
+  const { error } = await supabase
+    .from("submissions")
+    .update({
+      deleted_at: new Date().toISOString(),
+      deleted_by: deletedBy,
+      delete_reason: reason || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .is("deleted_at", null);
+
+  if (error) return false;
+
+  await supabase.from("sync_logs").insert({
+    action: "delete_submission",
+    count: 1,
+    time: new Date().toISOString(),
+    details: { submission_id: id, deleted_by: deletedBy, reason: reason || null },
+  });
+
+  return true;
+}
+
+export async function restoreSubmission(id: number, restoredBy: string): Promise<boolean> {
+  const supabase = await getSupabase();
+  const { error } = await supabase
+    .from("submissions")
+    .update({
+      deleted_at: null,
+      deleted_by: null,
+      delete_reason: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+
+  if (error) return false;
+
+  await supabase.from("sync_logs").insert({
+    action: "restore_submission",
+    count: 1,
+    time: new Date().toISOString(),
+    details: { submission_id: id, restored_by: restoredBy },
+  });
+
+  return true;
+}
+
+/** Soumissions supprimées — corbeille consultable par un administrateur. */
+export async function getDeletedSubmissions(limit = 100): Promise<DBSubmission[]> {
   const supabase = await getSupabase();
   const { data, error } = await supabase
     .from("submissions")
     .select("*")
-    .eq("id", id)
-    .single();
+    .not("deleted_at", "is", null)
+    .order("deleted_at", { ascending: false })
+    .limit(limit);
 
-  if (error || !data) return null;
-  return data;
+  if (error) throw new Error(`Supabase error: ${error.message}`);
+  return data || [];
 }
 
 export async function updateSubmissionStatus(
@@ -119,10 +207,16 @@ export async function updateSubmissionStatus(
 
 export async function syncFormsToDB(forms: DBForm[]): Promise<number> {
   const supabase = await getSupabase();
+  const now = new Date().toISOString();
 
   // Upsert tous les formulaires en une seule requête
   const { error } = await supabase.from("forms").upsert(
-    forms.map((f) => ({ ...f, updated_at: new Date().toISOString() })),
+    forms.map((f) => ({
+      ...f,
+      updated_at: now,
+      kobo_last_seen_at: now,
+      missing_on_kobo: false,
+    })),
     { onConflict: "uid" }
   );
 
@@ -131,62 +225,120 @@ export async function syncFormsToDB(forms: DBForm[]): Promise<number> {
     throw new Error(`Supabase error: ${error.message}`);
   }
 
+  // Formulaires absents de Kobo : signalés, jamais supprimés — leurs
+  // soumissions archivées doivent rester accessibles.
+  const uids = forms.map((f) => f.uid);
+  if (uids.length > 0) {
+    await supabase
+      .from("forms")
+      .update({ missing_on_kobo: true })
+      .not("uid", "in", `(${uids.map((u) => `"${u}"`).join(",")})`);
+  }
+
   // Log la synchronisation
   await supabase.from("sync_logs").insert({
     action: "sync_all",
     count: forms.length,
-    time: new Date().toISOString(),
+    time: now,
   });
 
   return forms.length;
 }
 
+/**
+ * Synchronise les soumissions d'un formulaire.
+ *
+ * La synchronisation n'efface JAMAIS de données locales :
+ * - les nouvelles soumissions sont insérées ;
+ * - les soumissions déjà connues ne sont pas écrasées (les corrections
+ *   saisies dans la plateforme priment sur la version Kobo) ;
+ * - celles qui ont disparu de Kobo sont marquées `missing_on_kobo` et
+ *   restent consultables. Seule une suppression par un utilisateur les retire.
+ */
 export async function syncSubmissionsToDB(
   formUid: string,
   submissions: DBSubmission[]
-): Promise<number> {
-  if (submissions.length === 0) return 0;
-
+): Promise<{ inserted: number; missing: number; reappeared: number }> {
   const supabase = await getSupabase();
+  const now = new Date().toISOString();
 
-  // Récupérer les kobo_id existants pour ce formulaire
+  // Toutes les soumissions locales de ce formulaire (supprimées incluses :
+  // une soumission mise à la corbeille ne doit pas être réinsérée)
   const { data: existing } = await supabase
     .from("submissions")
-    .select("kobo_id")
+    .select("id, kobo_id, missing_on_kobo")
     .eq("form_uid", formUid);
 
-  const existingIds = new Set((existing || []).map((s: { kobo_id: string }) => s.kobo_id));
+  const existingRows = existing || [];
+  const existingIds = new Set(
+    existingRows.map((s: { kobo_id: string }) => String(s.kobo_id))
+  );
+  const koboIds = new Set(submissions.map((s) => String(s.kobo_id)));
+
   const newSubs = submissions.filter((s) => !existingIds.has(String(s.kobo_id)));
 
-  if (newSubs.length === 0) return 0;
+  if (newSubs.length > 0) {
+    const { error } = await supabase.from("submissions").upsert(
+      newSubs.map((s) => ({
+        id: s.id,
+        kobo_id: s.kobo_id,
+        form_uid: s.form_uid,
+        submitted_by: s.submitted_by,
+        submitted_at: s.submitted_at,
+        data: s.data,
+        kobo_last_seen_at: now,
+        missing_on_kobo: false,
+      })),
+      { onConflict: "id" }
+    );
 
-  // Upsert les nouvelles soumissions
-  const { error } = await supabase.from("submissions").upsert(
-    newSubs.map((s) => ({
-      id: s.id,
-      kobo_id: s.kobo_id,
-      form_uid: s.form_uid,
-      submitted_by: s.submitted_by,
-      submitted_at: s.submitted_at,
-      data: s.data,
-    })),
-    { onConflict: "id" }
-  );
-
-  if (error) {
-    console.error("Supabase submissions sync error:", error);
-    throw new Error(`Supabase error: ${error.message}`);
+    if (error) {
+      console.error("Supabase submissions sync error:", error);
+      throw new Error(`Supabase error: ${error.message}`);
+    }
   }
 
-  // Log
-  await supabase.from("sync_logs").insert({
-    form_uid: formUid,
-    action: "sync_submissions",
-    count: newSubs.length,
-    time: new Date().toISOString(),
-  });
+  // Toujours présentes sur Kobo → rafraîchir la date de dernière vue
+  const stillPresent = existingRows
+    .filter((s: any) => koboIds.has(String(s.kobo_id)))
+    .map((s: any) => s.id);
 
-  return newSubs.length;
+  let reappeared = 0;
+  if (stillPresent.length > 0) {
+    // Une soumission restaurée sur Kobo perd son marqueur « absente »
+    reappeared = existingRows.filter(
+      (s: any) => koboIds.has(String(s.kobo_id)) && s.missing_on_kobo
+    ).length;
+
+    await supabase
+      .from("submissions")
+      .update({ kobo_last_seen_at: now, missing_on_kobo: false })
+      .in("id", stillPresent);
+  }
+
+  // Disparues de Kobo → conservées ici, simplement signalées
+  const missingIds = existingRows
+    .filter((s: any) => !koboIds.has(String(s.kobo_id)) && !s.missing_on_kobo)
+    .map((s: any) => s.id);
+
+  if (missingIds.length > 0) {
+    await supabase
+      .from("submissions")
+      .update({ missing_on_kobo: true })
+      .in("id", missingIds);
+  }
+
+  if (newSubs.length > 0 || missingIds.length > 0) {
+    await supabase.from("sync_logs").insert({
+      form_uid: formUid,
+      action: "sync_submissions",
+      count: newSubs.length,
+      time: now,
+      details: { inserted: newSubs.length, missing_on_kobo: missingIds.length, reappeared },
+    });
+  }
+
+  return { inserted: newSubs.length, missing: missingIds.length, reappeared };
 }
 
 /**
@@ -194,18 +346,22 @@ export async function syncSubmissionsToDB(
  * Utilisé par POST /api/sync et GET /api/cron/sync.
  * ⚠️ Sur le plan Hobby Vercel, les fonctions sont limitées à 60s.
  */
-export async function syncAllForms(): Promise<{
+export async function syncAllForms(options: { archiveMedia?: boolean } = {}): Promise<{
   forms_synced: number;
   submissions_synced: number;
+  submissions_missing_on_kobo: number;
   total_forms: number;
+  media?: { processed: number; archived: number; failed: number; remaining: number };
   errors?: string[];
 }> {
+  const startedAt = Date.now();
   const kobo = new KoboClient();
 
   const data = await kobo.getForms();
   const forms = data.results || [];
 
   let totalSynced = 0;
+  let totalMissing = 0;
   const errors: string[] = [];
 
   // 1. Sync forms metadata
@@ -239,17 +395,47 @@ export async function syncAllForms(): Promise<{
         }));
 
         const synced = await syncSubmissionsToDB(form.uid, subs);
-        totalSynced += synced;
+        totalSynced += synced.inserted;
+        totalMissing += synced.missing;
       } catch (e: any) {
         errors.push(`${form.name || form.uid}: ${e.message || "Erreur inconnue"}`);
       }
     }
   }
 
+  // 3. Archivage des médias avec le temps restant.
+  // Les images sont copiées dans Supabase Storage pour rester consultables
+  // même après suppression de la soumission sur Kobo.
+  let media;
+  if (options.archiveMedia !== false) {
+    try {
+      const { archivePendingMedia } = await import("./media-archive");
+      const supabase = await getSupabase();
+      const remainingBudget = 45_000 - (Date.now() - startedAt);
+      if (remainingBudget > 5_000) {
+        const res = await archivePendingMedia(supabase, {
+          limit: 30,
+          timeBudgetMs: remainingBudget,
+        });
+        media = {
+          processed: res.processed,
+          archived: res.archived,
+          failed: res.failed,
+          remaining: res.remaining,
+        };
+        if (res.errors.length > 0) errors.push(...res.errors);
+      }
+    } catch (e: any) {
+      errors.push(`Archivage medias: ${e.message || "Erreur inconnue"}`);
+    }
+  }
+
   return {
     forms_synced: formsSynced,
     submissions_synced: totalSynced,
+    submissions_missing_on_kobo: totalMissing,
     total_forms: forms.length,
+    media,
     errors: errors.length > 0 ? errors : undefined,
   };
 }

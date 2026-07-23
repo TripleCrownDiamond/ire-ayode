@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowRight, User, MapPin, Calendar } from "lucide-react";
+import { ArrowRight, MapPin, Calendar, Archive } from "lucide-react";
 import { parseFields, getMainInfo, isParcelleField } from "@/lib/field-map";
 import { buildAttachmentIndex, resolveAttachment } from "@/lib/attachments";
 import { KoboImage } from "@/components/kobo-image";
@@ -41,6 +41,16 @@ export function SubmissionCard({ submission, formUid }: SubmissionCardProps) {
                   #{submission.kobo_id}
                 </Badge>
                 <ValidationBadge status={validated} className="text-[10px] py-0 px-1.5" />
+                {submission.missing_on_kobo && (
+                  <Badge
+                    variant="outline"
+                    title="N'existe plus sur KoboToolbox — conservée dans la plateforme"
+                    className="text-[10px] py-0 px-1.5 border-amber-300 text-amber-700 bg-amber-50 gap-1"
+                  >
+                    <Archive className="h-3 w-3" />
+                    Archivée
+                  </Badge>
+                )}
                 {info.name && (
                   <span className="font-semibold truncate">
                     {String(info.name.value)}
@@ -110,6 +120,7 @@ export function SubmissionCard({ submission, formUid }: SubmissionCardProps) {
                   formUid={formUid}
                   filename={String(info.photo.value)}
                   downloadUrls={photoUrls}
+                  submissionId={submission.id}
                   alt={`Photo de ${info.name ? String(info.name.value) : "la soumission"}`}
                   containerClassName="h-12 w-12 shrink-0 rounded-full overflow-hidden border-2 border-white shadow-sm"
                   className="h-12 w-12 object-cover"

@@ -15,11 +15,18 @@ export interface GalleryImage {
 interface ImageGalleryProps {
   images: GalleryImage[];
   formUid: string;
+  /** Id de la soumission — sert la copie archivee localement */
+  submissionId?: number;
   /** Taille des vignettes de la grille */
   columns?: 2 | 3 | 4;
 }
 
-export function ImageGallery({ images, formUid, columns = 3 }: ImageGalleryProps) {
+export function ImageGallery({
+  images,
+  formUid,
+  submissionId,
+  columns = 3,
+}: ImageGalleryProps) {
   const [index, setIndex] = useState<number | null>(null);
 
   const close = useCallback(() => setIndex(null), []);
@@ -74,6 +81,7 @@ export function ImageGallery({ images, formUid, columns = 3 }: ImageGalleryProps
               formUid={formUid}
               filename={img.value}
               downloadUrls={img.downloadUrls}
+              submissionId={submissionId}
               alt={img.key}
               containerClassName="h-full w-full"
               className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
@@ -106,7 +114,7 @@ export function ImageGallery({ images, formUid, columns = 3 }: ImageGalleryProps
           </button>
 
           <a
-            href={getMediaUrl(formUid, current.value, current.downloadUrls)}
+            href={getMediaUrl(formUid, current.value, current.downloadUrls, submissionId)}
             download
             target="_blank"
             rel="noopener noreferrer"
@@ -151,6 +159,7 @@ export function ImageGallery({ images, formUid, columns = 3 }: ImageGalleryProps
               formUid={formUid}
               filename={current.value}
               downloadUrls={current.downloadUrls}
+              submissionId={submissionId}
               alt={current.key}
               containerClassName="flex items-center justify-center"
               className="max-w-full max-h-[80vh] object-contain rounded-lg"

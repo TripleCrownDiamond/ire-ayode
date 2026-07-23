@@ -11,6 +11,8 @@ interface KoboImageProps {
   filename: string;
   /** URL candidates issues des `_attachments`, par ordre de préférence */
   downloadUrls?: string[];
+  /** Id de la soumission — permet de servir la copie archivée localement */
+  submissionId?: number;
   alt: string;
   className?: string;
   /** Classe appliquée au conteneur (place réservée pendant le chargement) */
@@ -28,15 +30,16 @@ export function KoboImage({
   formUid,
   filename,
   downloadUrls,
+  submissionId,
   alt,
   className,
   containerClassName,
   fallbackLabel = "Image indisponible",
 }: KoboImageProps) {
-  // Chaîne de sources : proxy d'abord (authentifié côté serveur),
-  // puis les URL Kobo directes au cas où le proxy serait bloqué.
+  // Chaîne de sources : proxy d'abord — il sert la copie archivée localement,
+  // puis Kobo — enfin les URL Kobo directes si le proxy est indisponible.
   const sources = [
-    getMediaUrl(formUid, filename, downloadUrls),
+    getMediaUrl(formUid, filename, downloadUrls, submissionId),
     ...(downloadUrls || []),
   ];
 

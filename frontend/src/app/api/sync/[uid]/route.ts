@@ -23,11 +23,30 @@ export async function POST(
 
     const synced = await syncSubmissionsToDB(uid, subs);
 
+    // Copie locale des médias du formulaire — bornée en durée pour tenir
+    // dans la limite de 60 s des fonctions Vercel Hobby.
+    let media;
+    try {
+      const { archivePendingMedia } = await import("@/lib/media-archive");
+      const { createAdmin } = await import("@/lib/supabase-admin");
+      media = await archivePendingMedia(createAdmin(), {
+        limit: 30,
+        formUid: uid,
+        timeBudgetMs: 35_000,
+      });
+    } catch {
+      // Archivage indisponible : la synchronisation des données reste valide
+    }
+
     return NextResponse.json({
       status: "success",
       result: {
-        submissions_synced: synced,
+        submissions_synced: synced.inserted,
+        // Disparues de Kobo : conservées ici, simplement signalées
+        submissions_missing_on_kobo: synced.missing,
+        submissions_reappeared: synced.reappeared,
         total: subs.length,
+        media,
       },
     });
   } catch (e) {
