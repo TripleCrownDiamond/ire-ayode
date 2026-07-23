@@ -112,7 +112,7 @@ ALTER TABLE forms ENABLE ROW LEVEL SECURITY;
 ALTER TABLE submissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attachments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sync_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_permissions ENABLE ROW LEVEL SECURITY;
 
 -- Policies par défaut (à affiner avec auth)
 CREATE POLICY "Tout le monde peut lire les formulaires"
@@ -121,11 +121,30 @@ CREATE POLICY "Tout le monde peut lire les formulaires"
 CREATE POLICY "Tout le monde peut lire les soumissions"
   ON submissions FOR SELECT USING (true);
 
+CREATE POLICY "Tout le monde peut lire les attachments"
+  ON attachments FOR SELECT USING (true);
+
 CREATE POLICY "Admins peuvent tout modifier"
   ON submissions FOR UPDATE
-  USING (auth.uid() IN (SELECT user_id FROM user_roles WHERE role = 'admin'));
+  USING (auth.uid() IN (SELECT user_id FROM user_permissions WHERE is_admin = true));
 
 CREATE POLICY "Admins peuvent inserer"
   ON submissions FOR INSERT
-  WITH CHECK (auth.uid() IN (SELECT user_id FROM user_roles WHERE role = 'admin')
-    OR auth.uid() IN (SELECT user_id FROM user_roles WHERE role = 'editor'));
+  WITH CHECK (auth.uid() IN (SELECT user_id FROM user_permissions WHERE is_admin = true));
+
+CREATE POLICY "Tout le monde peut lire les logs"
+  ON sync_logs FOR SELECT USING (true);
+
+CREATE POLICY "Service role peut ecrire les logs"
+  ON sync_logs FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Utilisateurs lisent leurs propres permissions"
+  ON user_permissions FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Admins lisent toutes les permissions"
+  ON user_permissions FOR SELECT
+  USING (auth.uid() IN (SELECT user_id FROM user_permissions WHERE is_admin = true));
+
+CREATE POLICY "Admins modifient les permissions"
+  ON user_permissions FOR ALL
+  USING (auth.uid() IN (SELECT user_id FROM user_permissions WHERE is_admin = true));
