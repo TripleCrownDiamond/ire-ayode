@@ -35,11 +35,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (!user) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-background">
-        <div className="text-center space-y-4">
-          <p className="text-muted-foreground">Vous devez être connecté.</p>
-          <a href="/login" className="text-primary underline text-sm">
-            Se connecter
-          </a>
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex items-center justify-center h-12 w-12 rounded-xl bg-primary/10">
+            <RefreshCw className="h-6 w-6 text-primary animate-spin" />
+          </div>
+          <p className="text-sm text-muted-foreground">Chargement...</p>
         </div>
       </div>
     );

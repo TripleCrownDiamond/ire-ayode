@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ParcelMap } from "@/components/parcel-map-client";
 import { parseParcellePoints } from "@/lib/geo";
-import { MapPin, Filter, Users, Layers, ChevronDown, ChevronUp } from "lucide-react";
+import { MapPin, Filter, Users, Layers, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 
 interface Parcelle {
   id: string;
@@ -162,11 +162,8 @@ export default function MapPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[80vh] text-muted-foreground">
-        <div className="text-center">
-          <MapPin className="h-8 w-8 mx-auto animate-pulse text-primary/50" />
-          <p className="mt-2">Chargement des parcelles...</p>
-        </div>
+      <div className="flex items-center justify-center h-[80vh]">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }

@@ -34,6 +34,7 @@ import {
   Save,
   Edit3,
   X,
+  Loader2,
 } from "lucide-react";
 
 const GROUP_COLORS: Record<string, string> = {
@@ -143,7 +144,11 @@ export default function SubmissionPage() {
   };
 
   if (loading)
-    return <div className="text-center py-20 text-muted-foreground">Chargement...</div>;
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
   if (!sub)
     return <div className="text-center py-20 text-muted-foreground">Soumission introuvable</div>;
 
