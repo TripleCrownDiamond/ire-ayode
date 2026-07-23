@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 import { DEFAULT_PERMISSIONS, type Module, type UserPermissions } from "@/lib/permissions";
@@ -25,12 +26,13 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false);
   const [permissions, setPermissions] = useState<UserPermissions>(DEFAULT_PERMISSIONS);
   const [isAdmin, setIsAdmin] = useState(false);
+  const pathname = usePathname();
 
   const supabase = createClient();
 
-  // Récupère les permissions depuis l'API
   const refreshPermissions = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/users/me");
@@ -38,18 +40,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const data = await res.json();
         setPermissions(data.permissions || DEFAULT_PERMISSIONS);
         setIsAdmin(data.is_admin || false);
+      } else {
+        setPermissions(DEFAULT_PERMISSIONS);
+        setIsAdmin(false);
       }
     } catch {
       setPermissions(DEFAULT_PERMISSIONS);
       setIsAdmin(false);
     }
+    setPermissionsLoaded(true);
   }, []);
+
+  // Recharger les permissions à chaque changement de page
+  useEffect(() => {
+    if (user && permissionsLoaded) {
+      refreshPermissions();
+    }
+  }, [pathname]);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setUser(session?.user ?? null);
       if (session?.user) {
         await refreshPermissions();
+      } else {
+        setPermissionsLoaded(true);
       }
       setLoading(false);
     });
@@ -63,6 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setPermissions(DEFAULT_PERMISSIONS);
         setIsAdmin(false);
+        setPermissionsLoaded(true);
       }
     });
 
@@ -96,7 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: `${window.location.origin}/api/auth/callback`,
       },
     });
     if (error) return { error: error.message };
@@ -108,13 +124,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setPermissions(DEFAULT_PERMISSIONS);
     setIsAdmin(false);
+    setPermissionsLoaded(false);
   };
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        loading,
+        loading: loading || !permissionsLoaded,
         permissions,
         isAdmin,
         canRead,
