@@ -1,11 +1,7 @@
 // =============================================================
-// Couche d'accès aux données
-// Utilise Supabase si configuré, sinon lit db.json (fallback)
-// Migration progressive vers Supabase
+// Couche d'accès aux données — Supabase uniquement
 // =============================================================
 
-import fs from "fs";
-import path from "path";
 import { KoboClient } from "./kobo";
 
 // ---- Types ----
@@ -42,51 +38,8 @@ export interface DBSyncLog {
   details?: Record<string, unknown>;
 }
 
-export interface Database {
-  forms: Record<string, DBForm>;
-  submissions: Record<string, DBSubmission[]>;
-  logs: DBSyncLog[];
-}
+// ---- Lazy Supabase admin client ----
 
-// ---- Utilitaires ----
-
-const DB_PATH = path.resolve(process.cwd(), "..", "backend", "db.json");
-
-// ---- Cache mémoire avec TTL ----
-const dbCache = new Map<string, { data: Database; time: number }>();
-const CACHE_TTL = 10_000; // 10 secondes
-
-function loadDB(): Database {
-  const cached = dbCache.get("db");
-  if (cached && Date.now() - cached.time < CACHE_TTL) {
-    return cached.data;
-  }
-  try {
-    if (fs.existsSync(DB_PATH)) {
-      const data = JSON.parse(fs.readFileSync(DB_PATH, "utf-8"));
-      dbCache.set("db", { data, time: Date.now() });
-      return data;
-    }
-  } catch {
-    // Ignorer
-  }
-  return { forms: {}, submissions: {}, logs: [] };
-}
-
-function invalidateCache(): void {
-  dbCache.delete("db");
-}
-
-function saveDB(data: Database): void {
-  try {
-    fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
-    invalidateCache();
-  } catch {
-    // Ignorer en serverless (Vercel)
-  }
-}
-
-// ---- Cache lazy pour Supabase (évite les imports dynamiques répétés) ----
 let _supabase: any = null;
 async function getSupabase() {
   if (!_supabase) {
@@ -99,51 +52,26 @@ async function getSupabase() {
 // ---- API publique ----
 
 export async function getForms(): Promise<{ count: number; results: DBForm[] }> {
-  // Essayer Supabase d'abord
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (supabaseUrl) {
-    try {
-      const supabase = await getSupabase();
-      const { data, error, count } = await supabase
-        .from("forms")
-        .select("*", { count: "exact", head: false })
-        .order("date_created", { ascending: false });
+  const supabase = await getSupabase();
+  const { data, error, count } = await supabase
+    .from("forms")
+    .select("*", { count: "exact", head: false })
+    .order("date_created", { ascending: false });
 
-      if (!error && data) {
-        return { count: count || data.length, results: data };
-      }
-    } catch {
-      // Fallback silencieux
-    }
-  }
-
-  // Fallback: db.json
-  const db = loadDB();
-  const forms = Object.values(db.forms).sort((a, b) =>
-    (b.date_created || "").localeCompare(a.date_created || "")
-  );
-  return { count: forms.length, results: forms };
+  if (error) throw new Error(`Supabase error: ${error.message}`);
+  return { count: count || (data?.length ?? 0), results: data || [] };
 }
 
 export async function getForm(uid: string): Promise<DBForm | null> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (supabaseUrl) {
-    try {
-      const supabase = await getSupabase();
-      const { data, error } = await supabase
-        .from("forms")
-        .select("*")
-        .eq("uid", uid)
-        .single();
+  const supabase = await getSupabase();
+  const { data, error } = await supabase
+    .from("forms")
+    .select("*")
+    .eq("uid", uid)
+    .single();
 
-      if (!error && data) return data;
-    } catch {
-      // Fallback
-    }
-  }
-
-  const db = loadDB();
-  return db.forms[uid] || null;
+  if (error || !data) return null;
+  return data;
 }
 
 export async function getSubmissions(
@@ -151,54 +79,28 @@ export async function getSubmissions(
   skip = 0,
   limit = 100
 ): Promise<{ count: number; results: DBSubmission[] }> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (supabaseUrl) {
-    try {
-      const supabase = await getSupabase();
-      const { data, error, count } = await supabase
-        .from("submissions")
-        .select("*", { count: "exact", head: false })
-        .eq("form_uid", formUid)
-        .order("submitted_at", { ascending: false })
-        .range(skip, skip + limit - 1);
+  const supabase = await getSupabase();
+  const { data, error, count } = await supabase
+    .from("submissions")
+    .select("*", { count: "exact", head: false })
+    .eq("form_uid", formUid)
+    .order("submitted_at", { ascending: false })
+    .range(skip, skip + limit - 1);
 
-      if (!error && data) {
-        return { count: count || data.length, results: data };
-      }
-    } catch {
-      // Fallback
-    }
-  }
-
-  const db = loadDB();
-  const all = db.submissions[formUid] || [];
-  const paged = all.slice(Number(skip), Number(skip) + Number(limit));
-  return { count: all.length, results: paged };
+  if (error) throw new Error(`Supabase error: ${error.message}`);
+  return { count: count || (data?.length ?? 0), results: data || [] };
 }
 
 export async function getSubmission(id: number): Promise<DBSubmission | null> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (supabaseUrl) {
-    try {
-      const supabase = await getSupabase();
-      const { data, error } = await supabase
-        .from("submissions")
-        .select("*")
-        .eq("id", id)
-        .single();
+  const supabase = await getSupabase();
+  const { data, error } = await supabase
+    .from("submissions")
+    .select("*")
+    .eq("id", id)
+    .single();
 
-      if (!error && data) return data;
-    } catch {
-      // Fallback
-    }
-  }
-
-  const db = loadDB();
-  for (const subs of Object.values(db.submissions)) {
-    const found = subs.find((s) => Number(s.id) === Number(id));
-    if (found) return found;
-  }
-  return null;
+  if (error || !data) return null;
+  return data;
 }
 
 export async function updateSubmissionStatus(
@@ -206,128 +108,85 @@ export async function updateSubmissionStatus(
   validated: string,
   notes?: string
 ): Promise<boolean> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (supabaseUrl) {
-    try {
-      const supabase = await getSupabase();
-      const { error } = await supabase
-        .from("submissions")
-        .update({ validated, notes, updated_at: new Date().toISOString() })
-        .eq("id", id);
+  const supabase = await getSupabase();
+  const { error } = await supabase
+    .from("submissions")
+    .update({ validated, notes, updated_at: new Date().toISOString() })
+    .eq("id", id);
 
-      return !error;
-    } catch {
-      return false;
-    }
-  }
-
-  // Fallback: stocker la validation dans un fichier à part
-  try {
-    const validationPath = path.resolve(process.cwd(), "..", "backend", "validations.json");
-    let validations: Record<string, { validated: string; notes: string }> = {};
-    if (fs.existsSync(validationPath)) {
-      validations = JSON.parse(fs.readFileSync(validationPath, "utf-8"));
-    }
-    validations[String(id)] = { validated, notes: notes || "" };
-    fs.writeFileSync(validationPath, JSON.stringify(validations, null, 2));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export async function getSubmissionValidation(
-  id: number
-): Promise<{ validated: string; notes: string } | null> {
-  try {
-    const validationPath = path.resolve(process.cwd(), "..", "backend", "validations.json");
-    if (fs.existsSync(validationPath)) {
-      const validations = JSON.parse(fs.readFileSync(validationPath, "utf-8"));
-      return validations[String(id)] || null;
-    }
-  } catch {
-    // Ignorer
-  }
-  return null;
+  return !error;
 }
 
 export async function syncFormsToDB(forms: DBForm[]): Promise<number> {
-  const db = loadDB();
-  let synced = 0;
+  const supabase = await getSupabase();
 
-  for (const f of forms) {
-    if (!db.forms[f.uid]) synced++;
-    db.forms[f.uid] = f;
+  // Upsert tous les formulaires en une seule requête
+  const { error } = await supabase.from("forms").upsert(
+    forms.map((f) => ({ ...f, updated_at: new Date().toISOString() })),
+    { onConflict: "uid" }
+  );
+
+  if (error) {
+    console.error("Supabase forms sync error:", error);
+    throw new Error(`Supabase error: ${error.message}`);
   }
 
-  db.logs = db.logs || [];
-  db.logs.push({
+  // Log la synchronisation
+  await supabase.from("sync_logs").insert({
     action: "sync_all",
-    count: synced,
+    count: forms.length,
     time: new Date().toISOString(),
   });
-  saveDB(db);
 
-  // Si Supabase est configuré, upsert aussi là-bas
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (supabaseUrl) {
-    try {
-      const supabase = await getSupabase();
-      const { error } = await supabase.from("forms").upsert(
-        forms.map((f) => ({ ...f, updated_at: new Date().toISOString() })),
-        { onConflict: "uid" }
-      );
-      if (error) console.error("Supabase sync error:", error);
-    } catch (e) {
-      console.error("Supabase sync failed:", e);
-    }
-  }
-
-  return synced;
+  return forms.length;
 }
 
 export async function syncSubmissionsToDB(
   formUid: string,
   submissions: DBSubmission[]
 ): Promise<number> {
-  const db = loadDB();
-  if (!db.submissions[formUid]) db.submissions[formUid] = [];
+  if (submissions.length === 0) return 0;
 
-  const existingIds = new Set(db.submissions[formUid].map((s) => String(s.kobo_id)));
-  let synced = 0;
+  const supabase = await getSupabase();
 
-  for (const s of submissions) {
-    if (!existingIds.has(String(s.kobo_id))) {
-      db.submissions[formUid].push(s);
-      synced++;
-    }
+  // Récupérer les kobo_id existants pour ce formulaire
+  const { data: existing } = await supabase
+    .from("submissions")
+    .select("kobo_id")
+    .eq("form_uid", formUid);
+
+  const existingIds = new Set((existing || []).map((s: { kobo_id: string }) => s.kobo_id));
+  const newSubs = submissions.filter((s) => !existingIds.has(String(s.kobo_id)));
+
+  if (newSubs.length === 0) return 0;
+
+  // Upsert les nouvelles soumissions
+  const { error } = await supabase.from("submissions").upsert(
+    newSubs.map((s) => ({
+      id: s.id,
+      kobo_id: s.kobo_id,
+      form_uid: s.form_uid,
+      submitted_by: s.submitted_by,
+      submitted_at: s.submitted_at,
+      data: s.data,
+    })),
+    { onConflict: "id" }
+  );
+
+  if (error) {
+    console.error("Supabase submissions sync error:", error);
+    throw new Error(`Supabase error: ${error.message}`);
   }
 
-  db.logs = db.logs || [];
-  db.logs.push({
+  // Log
+  await supabase.from("sync_logs").insert({
     form_uid: formUid,
     action: "sync_submissions",
-    count: synced,
+    count: newSubs.length,
     time: new Date().toISOString(),
   });
-  saveDB(db);
 
-  // Sync vers Supabase si configuré
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (supabaseUrl) {
-    try {
-      const supabase = await getSupabase();
-      const { error } = await supabase.from("submissions").upsert(
-        submissions.filter((s) => !existingIds.has(String(s.kobo_id))),
-        { onConflict: "id" }
-      );
-      if (error) console.error("Supabase submissions sync error:", error);
-    } catch (e) {
-      console.error("Supabase submissions sync failed:", e);
-    }
-  }
-
-  return synced;
+  return newSubs.length;
 }
 
 /**
@@ -396,22 +255,13 @@ export async function syncAllForms(): Promise<{
 }
 
 export async function getSyncLogs(limit = 20): Promise<DBSyncLog[]> {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (supabaseUrl) {
-    try {
-      const supabase = await getSupabase();
-      const { data, error } = await supabase
-        .from("sync_logs")
-        .select("*")
-        .order("time", { ascending: false })
-        .limit(limit);
+  const supabase = await getSupabase();
+  const { data, error } = await supabase
+    .from("sync_logs")
+    .select("*")
+    .order("time", { ascending: false })
+    .limit(limit);
 
-      if (!error && data) return data;
-    } catch {
-      // Fallback
-    }
-  }
-
-  const db = loadDB();
-  return (db.logs || []).slice(-limit).reverse();
+  if (error) throw new Error(`Supabase error: ${error.message}`);
+  return data || [];
 }

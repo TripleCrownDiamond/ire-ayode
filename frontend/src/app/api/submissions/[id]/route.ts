@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSubmission, updateSubmissionStatus, getSubmissionValidation } from "@/lib/data";
+import { getSubmission, updateSubmissionStatus } from "@/lib/data";
 
 export async function GET(
   _request: Request,
@@ -10,15 +10,6 @@ export async function GET(
     const sub = await getSubmission(Number(id));
     if (!sub) {
       return NextResponse.json({ error: "Submission not found" }, { status: 404 });
-    }
-
-    // Enrichir avec les infos de validation (fallback fichier JSON si pas Supabase)
-    if (!sub.validated) {
-      const validation = await getSubmissionValidation(Number(id));
-      if (validation) {
-        sub.validated = validation.validated;
-        sub.notes = validation.notes;
-      }
     }
 
     return NextResponse.json(sub);
