@@ -1,10 +1,6 @@
 const CACHE_NAME = "ire-ayode-v1";
-const STATIC_ASSETS = ["/", "/login", "/manifest.json"];
 
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
-  );
+self.addEventListener("install", () => {
   self.skipWaiting();
 });
 
@@ -19,12 +15,11 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
-  // API calls: network only
-  if (request.url.includes("/api/")) {
-    event.respondWith(fetch(request));
+  // API calls + navigation: network only
+  if (request.url.includes("/api/") || request.mode === "navigate") {
     return;
   }
-  // Static assets: cache first, then network
+  // Static assets only: cache first, then network
   event.respondWith(
     caches.match(request).then((cached) => cached || fetch(request))
   );
