@@ -1,92 +1,168 @@
 "use client";
 
-import { useState } from "react";
-import { X, ZoomIn } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { X, ZoomIn, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { getMediaUrl } from "@/lib/api";
+import { KoboImage } from "@/components/kobo-image";
 
-interface GalleryImage {
+export interface GalleryImage {
   key: string;
   value: string;
-  /** URL de téléchargement Kobo (attachment) — si fourni, proxy via ?url= */
-  downloadUrl?: string;
+  /** URL de téléchargement Kobo (attachments) — proxifiées via ?url= */
+  downloadUrls?: string[];
 }
 
 interface ImageGalleryProps {
   images: GalleryImage[];
   formUid: string;
+  /** Taille des vignettes de la grille */
+  columns?: 2 | 3 | 4;
 }
 
-export function ImageGallery({ images, formUid }: ImageGalleryProps) {
-  const [selected, setSelected] = useState<string | null>(null);
+export function ImageGallery({ images, formUid, columns = 3 }: ImageGalleryProps) {
+  const [index, setIndex] = useState<number | null>(null);
+
+  const close = useCallback(() => setIndex(null), []);
+  const prev = useCallback(
+    () => setIndex((i) => (i === null ? null : (i - 1 + images.length) % images.length)),
+    [images.length]
+  );
+  const next = useCallback(
+    () => setIndex((i) => (i === null ? null : (i + 1) % images.length)),
+    [images.length]
+  );
+
+  // Navigation clavier dans la visionneuse + blocage du scroll de fond
+  useEffect(() => {
+    if (index === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+      else if (e.key === "ArrowLeft") prev();
+      else if (e.key === "ArrowRight") next();
+    };
+    window.addEventListener("keydown", onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [index, close, prev, next]);
 
   if (images.length === 0) return null;
 
-  const selectedImage = images.find((img) => img.value === selected);
-
-  const imgUrl = (img: GalleryImage) =>
-    getMediaUrl(formUid, img.value, img.downloadUrl);
-
-  // Fallback: try direct Kobo URL if proxy fails
-  const handleError = (e: React.SyntheticEvent<HTMLImageElement>, img: GalleryImage) => {
-    const target = e.currentTarget;
-    // If proxy failed and we have a direct downloadUrl, try it directly
-    if (img.downloadUrl && target.src !== img.downloadUrl) {
-      target.src = img.downloadUrl;
-      return;
-    }
-    // Otherwise show unavailable
-    target.style.display = "none";
-    target.parentElement!.classList.add("bg-muted", "flex", "items-center", "justify-center");
-    target.parentElement!.innerHTML =
-      `<span class="text-muted-foreground text-xs text-center p-2">Image<br/>indisponible</span>`;
-  };
+  const current = index !== null ? images[index] : null;
+  const gridCols =
+    columns === 2
+      ? "grid-cols-2"
+      : columns === 4
+        ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4"
+        : "grid-cols-2 sm:grid-cols-3";
 
   return (
     <>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-        {images.map((img) => (
+      <div className={`grid ${gridCols} gap-3`}>
+        {images.map((img, i) => (
           <button
             key={img.key}
-            onClick={() => setSelected(img.value)}
-            className="group relative rounded-lg overflow-hidden border hover:shadow-md transition-shadow aspect-square"
+            onClick={() => setIndex(i)}
+            title={img.key}
+            aria-label={`Agrandir ${img.key}`}
+            className="group relative rounded-lg overflow-hidden border hover:shadow-md hover:border-primary/40 transition-all aspect-square"
           >
-            <img
-              src={imgUrl(img)}
+            <KoboImage
+              formUid={formUid}
+              filename={img.value}
+              downloadUrls={img.downloadUrls}
               alt={img.key}
-              className="w-full h-full object-cover"
-              onError={(e) => handleError(e, img)}
+              containerClassName="h-full w-full"
+              className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
             />
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center pointer-events-none">
               <ZoomIn className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow" />
             </div>
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
+            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2 pointer-events-none">
               <span className="text-xs text-white truncate block">{img.key}</span>
             </div>
           </button>
         ))}
       </div>
 
-      {/* Lightbox */}
-      {selected && selectedImage && (
+      {/* Visionneuse */}
+      {current && index !== null && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
-          onClick={() => setSelected(null)}
+          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4"
+          onClick={close}
+          role="dialog"
+          aria-modal="true"
+          aria-label={current.key}
         >
           <button
-            className="absolute top-4 right-4 text-white hover:text-gray-300"
-            onClick={() => setSelected(null)}
+            className="absolute top-4 right-4 text-white/80 hover:text-white p-2"
+            onClick={close}
+            aria-label="Fermer"
           >
-            <X className="h-8 w-8" />
+            <X className="h-7 w-7" />
           </button>
-          <div className="max-w-4xl max-h-[90vh] relative" onClick={(e) => e.stopPropagation()}>
-            <img
-              src={imgUrl(selectedImage)}
-              alt={selectedImage.key}
-              className="max-w-full max-h-[85vh] object-contain rounded-lg"
-              onError={(e) => handleError(e, selectedImage)}
+
+          <a
+            href={getMediaUrl(formUid, current.value, current.downloadUrls)}
+            download
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute top-4 right-16 text-white/80 hover:text-white p-2"
+            aria-label="Télécharger"
+          >
+            <Download className="h-6 w-6" />
+          </a>
+
+          {images.length > 1 && (
+            <>
+              <button
+                className="absolute left-2 sm:left-6 text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  prev();
+                }}
+                aria-label="Image précédente"
+              >
+                <ChevronLeft className="h-8 w-8" />
+              </button>
+              <button
+                className="absolute right-2 sm:right-6 text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  next();
+                }}
+                aria-label="Image suivante"
+              >
+                <ChevronRight className="h-8 w-8" />
+              </button>
+            </>
+          )}
+
+          <div
+            className="max-w-4xl max-h-[90vh] flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <KoboImage
+              key={current.key}
+              formUid={formUid}
+              filename={current.value}
+              downloadUrls={current.downloadUrls}
+              alt={current.key}
+              containerClassName="flex items-center justify-center"
+              className="max-w-full max-h-[80vh] object-contain rounded-lg"
+              fallbackLabel="Fichier introuvable sur KoboToolbox"
             />
             <div className="text-center mt-3 text-white text-sm">
-              {selectedImage.key}
+              {current.key}
+              {images.length > 1 && (
+                <span className="text-white/50 ml-2">
+                  {index + 1} / {images.length}
+                </span>
+              )}
             </div>
           </div>
         </div>

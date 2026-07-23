@@ -62,11 +62,24 @@ export async function updateSubmissionData(id: number, data: Record<string, unkn
   return res.json();
 }
 
-export function getMediaUrl(uid: string, filename: string, downloadUrl?: string) {
-  if (downloadUrl) {
-    return `${API_BASE}/media/${uid}/${encodeURIComponent(filename)}?url=${encodeURIComponent(downloadUrl)}`;
-  }
-  // No downloadUrl: proxy tries kf + kc automatically
-  const encodedPath = filename.split("/").map(encodeURIComponent).join("/");
-  return `${API_BASE}/media/${uid}/${encodedPath}`;
+/**
+ * URL du proxy média.
+ * `downloadUrls` : URL candidates issues des `_attachments` Kobo, dans l'ordre
+ * de préférence. Le proxy les essaie l'une après l'autre — indispensable car
+ * Kobo ne génère pas de miniature pour tous les formats (les PNG de signature
+ * renvoient souvent 404 sur `download_medium_url` alors que l'original existe).
+ */
+export function getMediaUrl(
+  uid: string,
+  filename: string,
+  downloadUrls?: string | string[]
+) {
+  const urls = (Array.isArray(downloadUrls) ? downloadUrls : downloadUrls ? [downloadUrls] : [])
+    .filter(Boolean)
+    .slice(0, 4);
+  const path = filename
+    ? filename.split("/").map(encodeURIComponent).join("/")
+    : "attachment";
+  const query = urls.map((u) => `url=${encodeURIComponent(u)}`).join("&");
+  return `${API_BASE}/media/${uid}/${path}${query ? `?${query}` : ""}`;
 }

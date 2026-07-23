@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { fetchSubmission, getMediaUrl, updateSubmissionStatus, updateSubmissionData } from "@/lib/api";
+import { buildAttachmentIndex, resolveAttachment } from "@/lib/attachments";
+import { KoboImage } from "@/components/kobo-image";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,8 +22,7 @@ import {
   getMainInfo,
   isParcelleField,
   isGeoField,
-  isImageField,
-  cleanLabel,
+  isSignatureField,
 } from "@/lib/field-map";
 import {
   ArrowLeft,
@@ -31,6 +32,9 @@ import {
   TrendingUp,
   ShieldCheck,
   CheckCircle2,
+  PenTool,
+  Paperclip,
+  Camera,
   Save,
   Edit3,
   X,
@@ -108,7 +112,12 @@ export default function SubmissionPage() {
   const startEditing = () => {
     const editable: Record<string, string> = {};
     for (const field of fields) {
-      if (!field.isImage && !Array.isArray(field.value) && typeof field.value !== "object") {
+      if (
+        !field.isImage &&
+        !field.isFile &&
+        !Array.isArray(field.value) &&
+        typeof field.value !== "object"
+      ) {
         editable[field.key] = String(field.value ?? "");
       }
     }
@@ -157,56 +166,10 @@ export default function SubmissionPage() {
   const grouped = getFieldsByGroup(fields);
   const info = getMainInfo(fields);
 
-  // Carte des attachments Kobo (filename → download_url)
-  const attachments = (data._attachments as any[]) || [];
-  const attachmentMap = new Map<string, string>();
-  const allAttachmentUrls: string[] = [];
-  for (const att of attachments) {
-    const url = att.download_medium_url || att.download_large_url || att.download_url || "";
-    if (!url) continue;
-    allAttachmentUrls.push(url);
-    // Index by full path, basename, and without extension
-    attachmentMap.set(att.filename, url);
-    if (att.media_file_basename) {
-      attachmentMap.set(att.media_file_basename, url);
-    }
-    // Also index by just the basename without extension for matching
-    const baseNoExt = att.media_file_basename?.replace(/\.[^.]+$/, "");
-    if (baseNoExt) attachmentMap.set(baseNoExt, url);
-    // Index by last path segment
-    const lastSegment = att.filename?.split("/").pop();
-    if (lastSegment && lastSegment !== att.filename) attachmentMap.set(lastSegment, url);
-    if (lastSegment) {
-      const lastNoExt = lastSegment.replace(/\.[^.]+$/, "");
-      if (lastNoExt !== lastSegment) attachmentMap.set(lastNoExt, url);
-    }
-  }
-
-  // Helper: find download URL for a field value using multiple strategies
-  function findAttachmentUrl(fieldValue: string, fieldKey?: string): string | undefined {
-    const val = String(fieldValue);
-    // 1. Exact match
-    if (attachmentMap.has(val)) return attachmentMap.get(val);
-    // 2. Basename of the value
-    const basename = val.split("/").pop() || val;
-    if (attachmentMap.has(basename)) return attachmentMap.get(basename);
-    // 3. Basename without extension
-    const basenameNoExt = basename.replace(/\.[^.]+$/, "");
-    if (attachmentMap.has(basenameNoExt)) return attachmentMap.get(basenameNoExt);
-    // 4. Try field key
-    if (fieldKey) {
-      if (attachmentMap.has(fieldKey)) return attachmentMap.get(fieldKey);
-      const keyBase = fieldKey.split("/").pop() || fieldKey;
-      if (attachmentMap.has(keyBase)) return attachmentMap.get(keyBase);
-    }
-    // 5. Search: find any attachment whose filename contains the value's basename
-    for (const [mapKey, url] of attachmentMap) {
-      if (mapKey.includes(basename) || basename.includes(mapKey)) return url;
-    }
-    // 6. Last resort: if there's exactly one attachment, use it
-    if (allAttachmentUrls.length === 1) return allAttachmentUrls[0];
-    return undefined;
-  }
+  // Index des pièces jointes Kobo — résolution partagée avec les autres écrans
+  const attachmentIndex = buildAttachmentIndex(data._attachments);
+  const findAttachmentUrls = (value: unknown, key?: string) =>
+    resolveAttachment(attachmentIndex, value, key);
 
   // Parcelle
   const parcelleField = fields.find((f) => /parcelle|plan.*parcellaire/i.test(f.key));
@@ -252,24 +215,55 @@ export default function SubmissionPage() {
     }
   }
 
-  // Images (non-signatures) — enrichies avec downloadUrl des attachments
+  // Images (hors signatures) — enrichies avec les URL des attachments
   const imageFields = fields
-    .filter((f) => f.isImage && !/signature/i.test(f.key))
+    .filter((f) => f.isImage && !isSignatureField(f.key))
     .map((f) => ({
       key: f.label,
       value: String(f.value),
-      downloadUrl: findAttachmentUrl(String(f.value), f.key),
+      downloadUrls: findAttachmentUrls(f.value, f.key),
     }));
 
-  // Signatures
-  const signatureFields = fields.filter((f) => f.isImage && /signature/i.test(f.key));
+  // Signatures / paraphes — affichées à part, jamais masquées silencieusement
+  const signatureFields = fields
+    .filter((f) => f.isImage && isSignatureField(f.key))
+    .map((f) => ({
+      key: f.label,
+      value: String(f.value),
+      downloadUrls: findAttachmentUrls(f.value, f.key),
+    }));
 
-  // Map parcelles
+  // Fichiers joints non affichables (PDF, audio, documents scannés…)
+  const fileFields = fields
+    .filter((f) => f.isFile)
+    .map((f) => ({
+      key: f.key,
+      label: f.label,
+      value: String(f.value),
+      downloadUrls: findAttachmentUrls(f.value, f.key),
+    }));
+
+  // Map parcelles — popup enrichi avec les infos de la soumission
+  const mapMeta = {
+    submissionId: String(sub.kobo_id),
+    commune: info.commune ? String(info.commune.value) : undefined,
+    submitDate: sub.submitted_at
+      ? new Date(sub.submitted_at).toLocaleDateString("fr-FR")
+      : undefined,
+  };
+  const mapLabel = info.name ? String(info.name.value) : `#${sub.kobo_id}`;
   const mapParcelles =
     parcellePoints.length > 0
-      ? [{ id: sub.kobo_id, name: "Parcelle", points: parcellePoints }]
+      ? [{ id: String(sub.kobo_id), name: mapLabel, points: parcellePoints, ...mapMeta }]
       : gpsPoint
-        ? [{ id: sub.kobo_id, name: "Position GPS", points: [gpsPoint] }]
+        ? [
+            {
+              id: String(sub.kobo_id),
+              name: `${mapLabel} — position GPS`,
+              points: [gpsPoint],
+              ...mapMeta,
+            },
+          ]
         : [];
 
   const otherFields = grouped.autre || [];
@@ -380,14 +374,14 @@ export default function SubmissionPage() {
               <CardContent className="pl-5">
                 <div className="flex items-start gap-4">
                   {info.photo && (
-                    <img
-                      src={getMediaUrl(uid, String(info.photo.value), findAttachmentUrl(String(info.photo.value), info.photo.key))}
-                      alt="Photo"
-                      className="h-20 w-20 rounded-lg object-cover border shadow-sm"
-                      onError={(e) => {
-                        const target = e.currentTarget;
-                        target.style.display = "none";
-                      }}
+                    <KoboImage
+                      formUid={uid}
+                      filename={String(info.photo.value)}
+                      downloadUrls={findAttachmentUrls(info.photo.value, info.photo.key)}
+                      alt="Photo du producteur"
+                      containerClassName="h-20 w-20 shrink-0 rounded-lg overflow-hidden border shadow-sm"
+                      className="h-20 w-20 object-cover"
+                      fallbackLabel="Photo"
                     />
                   )}
                   <div className="flex-1 space-y-2">
@@ -465,7 +459,7 @@ export default function SubmissionPage() {
               <CardContent className="pl-5">
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   {grouped.parcelle
-                    .filter((f) => !f.isImage && !f.isGeo && !/plan.*parcellaire/i.test(f.key))
+                    .filter((f) => !f.isImage && !f.isFile && !f.isGeo && !/plan.*parcellaire/i.test(f.key))
                     .slice(0, 6)
                     .map((f) => (
                       <div key={f.key}>
@@ -511,7 +505,7 @@ export default function SubmissionPage() {
               <CardContent className="pl-5">
                 <div className="grid grid-cols-2 gap-4">
                   {grouped.recolte
-                    .filter((f) => !f.isImage)
+                    .filter((f) => !f.isImage && !f.isFile)
                     .map((f) => (
                       <div key={f.key}>
                         <span className="text-xs text-muted-foreground block">{f.label}</span>
@@ -539,12 +533,13 @@ export default function SubmissionPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
-                  📷 Photos
+                  <Camera className="h-4 w-4 text-purple-500" />
+                  Photos
                   <Badge variant="secondary" className="ml-1">{imageFields.length}</Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <ImageGallery images={imageFields} formUid={uid} />
+                <ImageGallery images={imageFields} formUid={uid} columns={2} />
               </CardContent>
             </Card>
           )}
@@ -553,27 +548,67 @@ export default function SubmissionPage() {
           {signatureFields.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Signatures</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <PenTool className="h-4 w-4 text-slate-500" />
+                  Signatures
+                  <Badge variant="secondary" className="ml-1">
+                    {signatureFields.length}
+                  </Badge>
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {signatureFields.map((f) => (
-                    <div key={f.key} className="rounded-lg border overflow-hidden">
-                      <img
-                        src={getMediaUrl(uid, String(f.value), findAttachmentUrl(String(f.value), f.key))}
-                        alt={f.label}
-                        className="w-full h-24 object-contain bg-gray-50 p-2"
-                        onError={(e) => {
-                          const target = e.currentTarget;
-                          target.style.display = "none";
-                        }}
+                    <a
+                      key={f.key}
+                      href={getMediaUrl(uid, f.value, f.downloadUrls)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-lg border overflow-hidden hover:border-primary/40 hover:shadow-sm transition-all block"
+                    >
+                      <KoboImage
+                        formUid={uid}
+                        filename={f.value}
+                        downloadUrls={f.downloadUrls}
+                        alt={f.key}
+                        containerClassName="h-24 w-full bg-white"
+                        className="w-full h-24 object-contain p-2"
+                        fallbackLabel="Signature indisponible"
                       />
-                      <div className="p-2 border-t">
-                        <span className="text-xs text-muted-foreground">{f.label}</span>
+                      <div className="p-2 border-t bg-muted/30">
+                        <span className="text-xs text-muted-foreground">{f.key}</span>
                       </div>
-                    </div>
+                    </a>
                   ))}
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Fichiers joints non affichables (PDF, audio…) */}
+          {fileFields.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Paperclip className="h-4 w-4 text-muted-foreground" />
+                  Fichiers joints
+                  <Badge variant="secondary" className="ml-1">{fileFields.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {fileFields.map((f) => (
+                  <a
+                    key={f.key}
+                    href={getMediaUrl(uid, f.value, f.downloadUrls)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 text-sm p-2 rounded-md border hover:bg-muted/50 transition-colors"
+                  >
+                    <Paperclip className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="truncate flex-1">{f.label}</span>
+                    <span className="text-xs text-muted-foreground shrink-0">Ouvrir</span>
+                  </a>
+                ))}
               </CardContent>
             </Card>
           )}

@@ -4,8 +4,9 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { ArrowRight, User, MapPin, Calendar } from "lucide-react";
-import { parseFields, getMainInfo, isParcelleField, isGeoField } from "@/lib/field-map";
-import { getMediaUrl } from "@/lib/api";
+import { parseFields, getMainInfo, isParcelleField } from "@/lib/field-map";
+import { buildAttachmentIndex, resolveAttachment } from "@/lib/attachments";
+import { KoboImage } from "@/components/kobo-image";
 import { ValidationBadge } from "@/components/validation-badge";
 
 interface SubmissionCardProps {
@@ -18,25 +19,13 @@ export function SubmissionCard({ submission, formUid }: SubmissionCardProps) {
   const fields = parseFields(data);
   const info = getMainInfo(fields);
 
-  // Carte des attachments Kobo pour résoudre les URLs d'images
-  const attachments = (data._attachments as any[]) || [];
-  const attachmentMap = new Map<string, string>();
-  for (const att of attachments) {
-    const url = att.download_medium_url || att.download_large_url || att.download_url || "";
-    if (url) {
-      attachmentMap.set(att.filename, url);
-      if (att.media_file_basename) {
-        attachmentMap.set(att.media_file_basename, url);
-      }
-    }
-  }
-
-  const photoUrl = info.photo
-    ? attachmentMap.get(String(info.photo.value)) || undefined
+  // Résolution des pièces jointes Kobo — logique partagée avec la fiche détaillée
+  const attachmentIndex = buildAttachmentIndex(data._attachments);
+  const photoUrls = info.photo
+    ? resolveAttachment(attachmentIndex, info.photo.value, info.photo.key)
     : undefined;
 
   const hasParcelle = Object.keys(data).some((k) => isParcelleField(k));
-  const hasGeo = Object.keys(data).some((k) => isGeoField(k));
   const validated = submission.validated || "pending";
 
   return (
@@ -117,14 +106,14 @@ export function SubmissionCard({ submission, formUid }: SubmissionCardProps) {
             {/* Right: photo + arrow */}
             <div className="flex items-center gap-3 shrink-0">
               {info.photo && (
-                <img
-                  src={getMediaUrl(formUid, String(info.photo.value), photoUrl)}
-                  alt="Photo"
-                  className="h-12 w-12 rounded-full object-cover border-2 border-white shadow-sm"
-                  onError={(e) => {
-                    const target = e.currentTarget;
-                    target.style.display = "none";
-                  }}
+                <KoboImage
+                  formUid={formUid}
+                  filename={String(info.photo.value)}
+                  downloadUrls={photoUrls}
+                  alt={`Photo de ${info.name ? String(info.name.value) : "la soumission"}`}
+                  containerClassName="h-12 w-12 shrink-0 rounded-full overflow-hidden border-2 border-white shadow-sm"
+                  className="h-12 w-12 object-cover"
+                  fallbackLabel=""
                 />
               )}
               <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />

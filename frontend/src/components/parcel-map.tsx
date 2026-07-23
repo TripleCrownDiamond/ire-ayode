@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 import type { Point } from "@/lib/geo";
 
-interface Parcelle {
+export interface Parcelle {
   id: string;
   name: string;
   points: Point[];
@@ -17,6 +17,10 @@ interface Parcelle {
   submitDate?: string;
   /** Commune (optionnel) */
   commune?: string;
+  /** Lien vers la fiche détaillée (optionnel) */
+  href?: string;
+  /** Superficie calculée ou saisie (optionnel) */
+  area?: string;
 }
 
 interface ParcelMapProps {
@@ -24,6 +28,10 @@ interface ParcelMapProps {
   center?: [number, number];
   zoom?: number;
   height?: string;
+  /** Identifiant de la parcelle à cadrer/ouvrir (piloté par la liste latérale) */
+  focusId?: string | null;
+  /** Affiche le sélecteur de fond de carte (satellite / plan) */
+  showLayerControl?: boolean;
 }
 
 const COLORS = [
@@ -31,165 +39,256 @@ const COLORS = [
   "#9333ea", "#ea580c", "#0891b2", "#be185d",
 ];
 
+/** Aire d'un polygone géographique en hectares (formule du lacet, projection locale). */
+function polygonAreaHa(points: Point[]): number | null {
+  if (points.length < 3) return null;
+  const R = 6378137;
+  const latRef = (points.reduce((s, p) => s + p.lat, 0) / points.length) * (Math.PI / 180);
+  const xy = points.map((p) => ({
+    x: (p.lng * Math.PI) / 180 * R * Math.cos(latRef),
+    y: (p.lat * Math.PI) / 180 * R,
+  }));
+  let sum = 0;
+  for (let i = 0; i < xy.length; i++) {
+    const a = xy[i];
+    const b = xy[(i + 1) % xy.length];
+    sum += a.x * b.y - b.x * a.y;
+  }
+  const m2 = Math.abs(sum) / 2;
+  return m2 / 10000;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function buildPopup(parcelle: Parcelle, color: string, points: Point[]): string {
+  const name = escapeHtml(parcelle.name);
+  const area = parcelle.area || (points.length >= 3 ? `${polygonAreaHa(points)?.toFixed(2)} ha` : null);
+  const coords = points
+    .slice(0, 8)
+    .map((p, i) => `Point ${i + 1} : ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`)
+    .join("<br/>");
+  const more = points.length > 8 ? `<br/>… +${points.length - 8} point(s)` : "";
+
+  const shape =
+    points.length >= 3 ? "polygone" : points.length === 2 ? "ligne" : "point GPS";
+
+  return `<div style="min-width:220px;font-family:system-ui,sans-serif">
+    <div style="font-weight:600;color:${color};font-size:14px;margin-bottom:4px">${name}</div>
+    ${parcelle.submitDate ? `<div style="font-size:11px;color:#666">📅 ${escapeHtml(parcelle.submitDate)}</div>` : ""}
+    ${parcelle.commune ? `<div style="font-size:11px;color:#666">📍 ${escapeHtml(parcelle.commune)}</div>` : ""}
+    ${area ? `<div style="font-size:11px;color:#666">📐 ${escapeHtml(String(area))}</div>` : ""}
+    <hr style="margin:6px 0;border:none;border-top:1px solid #eee" />
+    <div style="font-size:11px;color:#333;font-family:monospace">${coords}${more}</div>
+    <div style="font-size:11px;color:#999;margin-top:4px">${points.length} point(s) · ${shape}${
+      parcelle.submissionId ? ` · #${escapeHtml(parcelle.submissionId)}` : ""
+    }</div>
+    ${
+      parcelle.href
+        ? `<a href="${escapeHtml(parcelle.href)}" style="display:inline-block;margin-top:8px;font-size:12px;color:${color};font-weight:500;text-decoration:none">Ouvrir la fiche →</a>`
+        : ""
+    }
+  </div>`;
+}
+
 export function ParcelMap({
   parcelles,
-  center = [8.05, 2.50],
+  center = [8.05, 2.5],
   zoom = 13,
   height = "500px",
+  focusId = null,
+  showLayerControl = true,
 }: ParcelMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
+  /** Couche unique regroupant les dessins : vidée à chaque mise à jour pour
+   *  éviter l'empilement des anciennes parcelles lors d'un changement de filtre. */
+  const layerGroup = useRef<L.FeatureGroup | null>(null);
+  const layersById = useRef<Map<string, L.Layer>>(new Map());
+  const hasFitted = useRef(false);
 
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return;
 
-    const map = L.map(mapRef.current).setView(center, zoom);
+    const map = L.map(mapRef.current, {
+      center,
+      zoom,
+      zoomControl: true,
+      scrollWheelZoom: true,
+    });
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    const osm = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       maxZoom: 19,
-    }).addTo(map);
+    });
 
+    // Vue satellite : indispensable pour vérifier les limites d'une parcelle
+    const satellite = L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      { attribution: "&copy; Esri, Maxar, Earthstar Geographics", maxZoom: 19 }
+    );
+
+    const labels = L.tileLayer(
+      "https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png",
+      { attribution: "&copy; CARTO", maxZoom: 19 }
+    );
+
+    const satelliteLabelled = L.layerGroup([satellite, labels]);
+
+    osm.addTo(map);
+
+    if (showLayerControl) {
+      L.control
+        .layers(
+          { Plan: osm, "Satellite": satelliteLabelled },
+          {},
+          { position: "topright", collapsed: true }
+        )
+        .addTo(map);
+    }
+
+    L.control.scale({ imperial: false, position: "bottomleft" }).addTo(map);
+
+    layerGroup.current = L.featureGroup().addTo(map);
     mapInstance.current = map;
 
+    // Leaflet calcule mal ses dimensions quand le conteneur est monté caché
+    // (onglets, panneaux repliés) : on force un recalcul après le premier rendu.
+    const invalidate = () => map.invalidateSize();
+    const raf = requestAnimationFrame(invalidate);
+    window.addEventListener("resize", invalidate);
+    const observer =
+      typeof ResizeObserver !== "undefined" ? new ResizeObserver(invalidate) : null;
+    if (observer && mapRef.current) observer.observe(mapRef.current);
+
     return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", invalidate);
+      observer?.disconnect();
       map.remove();
       mapInstance.current = null;
+      layerGroup.current = null;
+      layersById.current.clear();
+      hasFitted.current = false;
     };
+    // Le point de départ ne doit pas recréer la carte à chaque rendu
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Clé stable : évite de redessiner quand le parent recrée le tableau à l'identique
+  const signature = useMemo(
+    () =>
+      parcelles
+        .map((p) => `${p.id}:${p.color || ""}:${p.points.length}`)
+        .join("|"),
+    [parcelles]
+  );
 
   useEffect(() => {
     const map = mapInstance.current;
-    if (!map) return;
+    const group = layerGroup.current;
+    if (!map || !group) return;
+
+    // Purge des dessins précédents — sans cela, filtrer la carte laissait
+    // les anciennes parcelles affichées par-dessus les nouvelles.
+    group.clearLayers();
+    layersById.current.clear();
 
     const bounds = L.latLngBounds([]);
 
     parcelles.forEach((parcelle, i) => {
       const color = parcelle.color || COLORS[i % COLORS.length];
       const validPoints = parcelle.points.filter(
-        (p) => p != null && typeof p.lat === "number" && typeof p.lng === "number" && !isNaN(p.lat) && !isNaN(p.lng)
+        (p) =>
+          p != null &&
+          typeof p.lat === "number" &&
+          typeof p.lng === "number" &&
+          !isNaN(p.lat) &&
+          !isNaN(p.lng) &&
+          Math.abs(p.lat) <= 90 &&
+          Math.abs(p.lng) <= 180
       );
       if (validPoints.length === 0) return;
 
+      const latlngs = validPoints.map((p) => [p.lat, p.lng] as L.LatLngExpression);
+      const popup = buildPopup(parcelle, color, validPoints);
+      let layer: L.Path;
+
       if (validPoints.length >= 3) {
-        const latlngs = validPoints.map((p) => [p.lat, p.lng] as L.LatLngExpression);
-        const polygon = L.polygon(latlngs, {
+        layer = L.polygon(latlngs, {
           color,
           fillColor: color,
           fillOpacity: 0.25,
           weight: 2,
-        }).addTo(map);
-
-        const first = validPoints[0];
-        const coordsStr = `${first.lat.toFixed(6)}, ${first.lng.toFixed(6)}`;
-
-        const popupContent = parcelle.submissionId
-          ? `<div style="min-width:200px;font-family:system-ui,sans-serif">
-              <div style="font-weight:600;color:${color};font-size:14px;margin-bottom:4px">${parcelle.name}</div>
-              ${parcelle.submitDate ? `<div style="font-size:11px;color:#666">📅 ${parcelle.submitDate}</div>` : ""}
-              ${parcelle.commune ? `<div style="font-size:11px;color:#666">📍 ${parcelle.commune}</div>` : ""}
-              <hr style="margin:6px 0;border:none;border-top:1px solid #eee" />
-              <div style="font-size:11px;color:#333;font-family:monospace">
-                ${latlngs.map((ll, idx) => {
-                  const lat = Array.isArray(ll) ? ll[0] : (ll as L.LatLng).lat;
-                  const lng = Array.isArray(ll) ? ll[1] : (ll as L.LatLng).lng;
-                  return `Point ${idx + 1} : ${typeof lat === "number" ? lat.toFixed(6) : lat}, ${typeof lng === "number" ? lng.toFixed(6) : lng}`;
-                }).join("<br/>")}
-              </div>
-              <div style="font-size:11px;color:#999;margin-top:4px">${validPoints.length} points · #${parcelle.submissionId}</div>
-            </div>`
-          : `<div style="min-width:200px;font-family:system-ui,sans-serif">
-              <strong style="color:${color}">${parcelle.name}</strong><br/>
-              <span style="font-size:11px;color:#333;font-family:monospace">${coordsStr}</span><br/>
-              <span style="font-size:12px;color:#666">${parcelle.points.length} points</span>
-            </div>`;
-
-        polygon.bindPopup(popupContent);
-
-        // Tooltip au survol avec le nom et les coordonnées du premier point
-        polygon.bindTooltip(
-          `<div style="font-family:monospace;font-size:11px">${parcelle.name}<br/>${coordsStr}</div>`,
-          { sticky: true, direction: "top" }
-        );
-
-        latlngs.forEach((ll) => bounds.extend(ll as L.LatLngExpression));
+        });
       } else if (validPoints.length === 2) {
-        // 2 points = ligne (ne peut pas être un polygone valide, mais on peut tracer une polyligne)
-        const latlngs = validPoints.map((p) => [p.lat, p.lng] as L.LatLngExpression);
-        const line = L.polyline(latlngs, {
-          color,
-          weight: 3,
-          dashArray: "6, 4",
-        }).addTo(map);
-
-        const coordsHtml = validPoints
-          .map((p, idx) => `Point ${idx + 1} : ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`)
-          .join("<br/>");
-
-        const popupContent = parcelle.submissionId
-          ? `<div style="min-width:200px;font-family:system-ui,sans-serif">
-              <div style="font-weight:600;color:${color};font-size:14px;margin-bottom:4px">${parcelle.name}</div>
-              ${parcelle.submitDate ? `<div style="font-size:11px;color:#666">📅 ${parcelle.submitDate}</div>` : ""}
-              ${parcelle.commune ? `<div style="font-size:11px;color:#666">📍 ${parcelle.commune}</div>` : ""}
-              <hr style="margin:6px 0;border:none;border-top:1px solid #eee" />
-              <div style="font-size:11px;color:#333;font-family:monospace">${coordsHtml}</div>
-              <div style="font-size:11px;color:#999;margin-top:4px">2 points · ligne · #${parcelle.submissionId}</div>
-            </div>`
-          : `<div style="min-width:200px">
-              <strong style="color:${color}">${parcelle.name}</strong><br/>
-              <span style="font-size:11px;color:#333;font-family:monospace">${coordsHtml}</span>
-            </div>`;
-
-        line.bindPopup(popupContent);
-        line.bindTooltip(
-          `<div style="font-family:monospace;font-size:11px">${parcelle.name}</div>`,
-          { sticky: true }
-        );
-
-        latlngs.forEach((ll) => bounds.extend(ll as L.LatLngExpression));
-      } else if (validPoints.length === 1) {
+        layer = L.polyline(latlngs, { color, weight: 3, dashArray: "6, 4" });
+      } else {
         const p = validPoints[0];
-        if (p == null || typeof p.lat !== "number") return;
-        const marker = L.circleMarker([p.lat, p.lng], {
+        layer = L.circleMarker([p.lat, p.lng], {
           radius: 8,
           fillColor: color,
           color: "#fff",
           weight: 2,
           fillOpacity: 0.9,
-        }).addTo(map);
-
-        const coordsStr = `${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}`;
-
-        const popupContent = parcelle.submissionId
-          ? `<div style="min-width:200px;font-family:system-ui,sans-serif">
-              <strong style="color:${color};font-size:14px">${parcelle.name}</strong>
-              ${parcelle.submitDate ? `<br/><span style="font-size:11px;color:#666">📅 ${parcelle.submitDate}</span>` : ""}
-              ${parcelle.commune ? `<br/><span style="font-size:11px;color:#666">📍 ${parcelle.commune}</span>` : ""}
-              <hr style="margin:6px 0;border:none;border-top:1px solid #eee" />
-              <div style="font-size:12px;color:#333;font-family:monospace">📍 ${coordsStr}</div>
-              <div style="font-size:11px;color:#999;margin-top:4px">#${parcelle.submissionId}</div>
-            </div>`
-          : `<div style="min-width:150px;font-family:system-ui,sans-serif;text-align:center">
-              <strong style="color:${color}">${parcelle.name}</strong><br/>
-              <span style="font-size:12px;color:#333;font-family:monospace">📍 ${coordsStr}</span>
-            </div>`;
-
-        marker.bindPopup(popupContent);
-
-        // Tooltip au survol
-        marker.bindTooltip(
-          `<div style="font-family:monospace;font-size:11px">${coordsStr}</div>`,
-          { sticky: true, direction: "top", offset: [0, -10] }
-        );
-
-        bounds.extend([p.lat, p.lng]);
+        });
       }
+
+      layer.addTo(group);
+      layer.bindPopup(popup, { maxWidth: 320, autoPan: true });
+      layer.bindTooltip(
+        `<div style="font-family:system-ui,sans-serif;font-size:11px"><strong>${escapeHtml(
+          parcelle.name
+        )}</strong>${
+          parcelle.commune ? `<br/>${escapeHtml(parcelle.commune)}` : ""
+        }</div>`,
+        { sticky: true, direction: "top" }
+      );
+
+      // Retour visuel au survol
+      const baseWeight = validPoints.length === 1 ? 2 : validPoints.length === 2 ? 3 : 2;
+      layer.on("mouseover", () => layer.setStyle({ weight: baseWeight + 2, fillOpacity: 0.4 }));
+      layer.on("mouseout", () =>
+        layer.setStyle({ weight: baseWeight, fillOpacity: validPoints.length === 1 ? 0.9 : 0.25 })
+      );
+
+      layersById.current.set(parcelle.id, layer);
+      latlngs.forEach((ll) => bounds.extend(ll));
     });
 
     if (bounds.isValid()) {
-      map.fitBounds(bounds, { padding: [40, 40] });
+      // Recadrage animé sur les mises à jour, instantané au premier rendu
+      map.fitBounds(bounds, {
+        padding: [40, 40],
+        maxZoom: 17,
+        animate: hasFitted.current,
+      });
+      hasFitted.current = true;
     }
-  }, [parcelles]);
+    // `signature` résume le contenu de `parcelles`
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature]);
+
+  // Recadrage sur la parcelle sélectionnée dans la liste
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!map || !focusId) return;
+    const layer = layersById.current.get(focusId);
+    if (!layer) return;
+
+    if ("getBounds" in layer && typeof (layer as L.Polygon).getBounds === "function") {
+      const b = (layer as L.Polygon).getBounds();
+      if (b.isValid()) map.fitBounds(b, { padding: [60, 60], maxZoom: 18 });
+    } else if ("getLatLng" in layer) {
+      map.setView((layer as L.CircleMarker).getLatLng(), 17, { animate: true });
+    }
+    (layer as L.Path).openPopup();
+  }, [focusId]);
 
   return <div ref={mapRef} style={{ height, width: "100%" }} className="rounded-lg z-0" />;
 }
