@@ -160,16 +160,52 @@ export default function SubmissionPage() {
   // Carte des attachments Kobo (filename → download_url)
   const attachments = (data._attachments as any[]) || [];
   const attachmentMap = new Map<string, string>();
+  const allAttachmentUrls: string[] = [];
   for (const att of attachments) {
-    // Priorité à l'URL medium, puis large, puis download
     const url = att.download_medium_url || att.download_large_url || att.download_url || "";
-    if (url) {
-      attachmentMap.set(att.filename, url);
-      // Fallback: media_file_basename sans extension
-      if (att.media_file_basename) {
-        attachmentMap.set(att.media_file_basename, url);
-      }
+    if (!url) continue;
+    allAttachmentUrls.push(url);
+    // Index by full path, basename, and without extension
+    attachmentMap.set(att.filename, url);
+    if (att.media_file_basename) {
+      attachmentMap.set(att.media_file_basename, url);
     }
+    // Also index by just the basename without extension for matching
+    const baseNoExt = att.media_file_basename?.replace(/\.[^.]+$/, "");
+    if (baseNoExt) attachmentMap.set(baseNoExt, url);
+    // Index by last path segment
+    const lastSegment = att.filename?.split("/").pop();
+    if (lastSegment && lastSegment !== att.filename) attachmentMap.set(lastSegment, url);
+    if (lastSegment) {
+      const lastNoExt = lastSegment.replace(/\.[^.]+$/, "");
+      if (lastNoExt !== lastSegment) attachmentMap.set(lastNoExt, url);
+    }
+  }
+
+  // Helper: find download URL for a field value using multiple strategies
+  function findAttachmentUrl(fieldValue: string, fieldKey?: string): string | undefined {
+    const val = String(fieldValue);
+    // 1. Exact match
+    if (attachmentMap.has(val)) return attachmentMap.get(val);
+    // 2. Basename of the value
+    const basename = val.split("/").pop() || val;
+    if (attachmentMap.has(basename)) return attachmentMap.get(basename);
+    // 3. Basename without extension
+    const basenameNoExt = basename.replace(/\.[^.]+$/, "");
+    if (attachmentMap.has(basenameNoExt)) return attachmentMap.get(basenameNoExt);
+    // 4. Try field key
+    if (fieldKey) {
+      if (attachmentMap.has(fieldKey)) return attachmentMap.get(fieldKey);
+      const keyBase = fieldKey.split("/").pop() || fieldKey;
+      if (attachmentMap.has(keyBase)) return attachmentMap.get(keyBase);
+    }
+    // 5. Search: find any attachment whose filename contains the value's basename
+    for (const [mapKey, url] of attachmentMap) {
+      if (mapKey.includes(basename) || basename.includes(mapKey)) return url;
+    }
+    // 6. Last resort: if there's exactly one attachment, use it
+    if (allAttachmentUrls.length === 1) return allAttachmentUrls[0];
+    return undefined;
   }
 
   // Parcelle
@@ -222,7 +258,7 @@ export default function SubmissionPage() {
     .map((f) => ({
       key: f.label,
       value: String(f.value),
-      downloadUrl: attachmentMap.get(String(f.value)) || attachmentMap.get(f.key) || undefined,
+      downloadUrl: findAttachmentUrl(String(f.value), f.key),
     }));
 
   // Signatures
@@ -345,7 +381,7 @@ export default function SubmissionPage() {
                 <div className="flex items-start gap-4">
                   {info.photo && (
                     <img
-                      src={getMediaUrl(uid, String(info.photo.value), attachmentMap.get(String(info.photo.value)) || undefined)}
+                      src={getMediaUrl(uid, String(info.photo.value), findAttachmentUrl(String(info.photo.value), info.photo.key))}
                       alt="Photo"
                       className="h-20 w-20 rounded-lg object-cover border shadow-sm"
                       onError={(e) => {
@@ -524,7 +560,7 @@ export default function SubmissionPage() {
                   {signatureFields.map((f) => (
                     <div key={f.key} className="rounded-lg border overflow-hidden">
                       <img
-                        src={getMediaUrl(uid, String(f.value), attachmentMap.get(String(f.value)) || undefined)}
+                        src={getMediaUrl(uid, String(f.value), findAttachmentUrl(String(f.value), f.key))}
                         alt={f.label}
                         className="w-full h-24 object-contain bg-gray-50 p-2"
                         onError={(e) => {
