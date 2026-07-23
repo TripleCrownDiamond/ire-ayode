@@ -1,0 +1,17 @@
+{
+  "name": "Ire Ayode — Plateforme agricole",
+  "short_name": "Ire Ayode",
+  "description": "Sync KoboToolbox & Dashboard agricole",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#171717",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
