@@ -25,8 +25,33 @@ const IMAGE_EXTENSIONS = [
 
 const IMAGE_EXT_RE = new RegExp(`\\.(${IMAGE_EXTENSIONS.join("|")})(\\?|$)`, "i");
 
-/** Toute valeur qui ressemble à un nom de fichier (média ou non). */
-const ANY_FILE_RE = /\.[a-z0-9]{2,5}(\?|$)/i;
+/**
+ * Extensions non-image acceptées comme pièces jointes.
+ * La liste est fermée volontairement : une règle générique du type
+ * « un point suivi de 2 à 5 caractères » classait « 8.0508043 2.5049482 3.766 »
+ * (coordonnées GPS), « 1.25 » (superficie) ou « 97.12.34.56 » (téléphone)
+ * comme des fichiers.
+ */
+const DOCUMENT_EXTENSIONS = [
+  "pdf", "doc", "docx", "odt", "rtf", "txt",
+  "xls", "xlsx", "ods", "csv",
+  "ppt", "pptx",
+  "zip", "rar", "7z",
+  "mp3", "m4a", "wav", "ogg", "oga", "amr", "aac",
+  "mp4", "3gp", "3gpp", "mov", "avi", "mkv", "webm",
+];
+
+const ALL_FILE_EXTENSIONS = [...IMAGE_EXTENSIONS, ...DOCUMENT_EXTENSIONS];
+
+/** Extension de fichier reconnue, en fin de valeur. */
+const ANY_FILE_RE = new RegExp(`\\.(${ALL_FILE_EXTENSIONS.join("|")})(\\?|$)`, "i");
+
+/**
+ * Extension plausible mais inconnue : uniquement des lettres.
+ * Sert de garde-fou pour les champs média dont le format n'est pas listé —
+ * jamais pour du texte libre, et jamais pour une valeur numérique.
+ */
+const LETTER_EXT_RE = /^[^\s]+\.[a-z]{2,5}$/i;
 
 /**
  * Normalise un nom de fichier pour la comparaison :
@@ -55,9 +80,22 @@ export function isImageValue(value: unknown): boolean {
   return typeof value === "string" && IMAGE_EXT_RE.test(value.trim());
 }
 
-/** La valeur du champ ressemble-t-elle à un nom de fichier quelconque ? */
+/** La valeur du champ porte-t-elle une extension de fichier reconnue ? */
 export function isFileValue(value: unknown): boolean {
   return typeof value === "string" && ANY_FILE_RE.test(value.trim());
+}
+
+/**
+ * Nom de fichier plausible à extension inconnue (« signature.sig »).
+ * Exclut les nombres et les listes de coordonnées : l'extension doit être
+ * alphabétique et la valeur ne doit pas contenir d'espace ni de séparateur
+ * de points GPS.
+ */
+export function looksLikeFilename(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const v = value.trim();
+  if (!v || v.includes(";") || /\d\s+\d/.test(v)) return false;
+  return LETTER_EXT_RE.test(v);
 }
 
 /**

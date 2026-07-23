@@ -15,12 +15,16 @@ import {
   ShieldCheck,
   UserCircle,
   Database,
+  Users,
+  Trees,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const links: { href: string; label: string; icon: React.ElementType; module: Module }[] = [
   { href: "/", label: "Tableau de bord", icon: LayoutDashboard, module: "dashboard" },
   { href: "/forms", label: "Formulaires", icon: FileText, module: "forms" },
+  { href: "/producteurs", label: "Producteurs", icon: Users, module: "forms" },
+  { href: "/parcelles", label: "Parcelles", icon: Trees, module: "forms" },
   { href: "/map", label: "Carte", icon: Map, module: "map" },
   { href: "/admin/users", label: "Utilisateurs", icon: ShieldCheck, module: "admin" },
   { href: "/admin/data", label: "Données & archivage", icon: Database, module: "admin" },

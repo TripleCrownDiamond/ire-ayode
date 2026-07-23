@@ -36,6 +36,15 @@ export interface DBSubmission {
   kobo_last_seen_at?: string | null;
   media_archived_at?: string | null;
   media_count?: number;
+  /** Producteur rattaché (jointure) */
+  producer?: {
+    id: number;
+    code: string;
+    name: string;
+    commune?: string;
+  } | null;
+  producer_id?: number | null;
+  producer_source?: string | null;
 }
 
 export interface DBSyncLog {
@@ -59,15 +68,96 @@ async function getSupabase() {
 
 // ---- API publique ----
 
-export async function getForms(): Promise<{ count: number; results: DBForm[] }> {
+export async function getForms(
+  options: { includeDeleted?: boolean } = {}
+): Promise<{ count: number; results: DBForm[] }> {
   const supabase = await getSupabase();
-  const { data, error, count } = await supabase
-    .from("forms")
-    .select("*", { count: "exact", head: false })
-    .order("date_created", { ascending: false });
+  let query = supabase.from("forms").select("*", { count: "exact", head: false });
+  if (!options.includeDeleted) query = query.is("deleted_at", null);
+
+  const { data, error, count } = await query.order("date_created", { ascending: false });
 
   if (error) throw new Error(`Supabase error: ${error.message}`);
   return { count: count || (data?.length ?? 0), results: data || [] };
+}
+
+/**
+ * Supprime un formulaire et toutes ses soumissions (suppression logique).
+ * Proposé uniquement lorsque le formulaire a disparu de KoboToolbox — mais
+ * jamais exécuté automatiquement : c'est une décision de l'utilisateur.
+ */
+export async function deleteForm(
+  uid: string,
+  deletedBy: string,
+  reason?: string
+): Promise<{ submissions: number } | null> {
+  const supabase = await getSupabase();
+  const now = new Date().toISOString();
+
+  const { count } = await supabase
+    .from("submissions")
+    .select("id", { count: "exact", head: true })
+    .eq("form_uid", uid)
+    .is("deleted_at", null);
+
+  const { error: subError } = await supabase
+    .from("submissions")
+    .update({
+      deleted_at: now,
+      deleted_by: deletedBy,
+      delete_reason: reason || `Formulaire ${uid} supprimé`,
+      updated_at: now,
+    })
+    .eq("form_uid", uid)
+    .is("deleted_at", null);
+
+  if (subError) return null;
+
+  const { error: formError } = await supabase
+    .from("forms")
+    .update({ deleted_at: now, deleted_by: deletedBy, delete_reason: reason || null })
+    .eq("uid", uid)
+    .is("deleted_at", null);
+
+  if (formError) return null;
+
+  await supabase.from("sync_logs").insert({
+    action: "delete_form",
+    count: count ?? 0,
+    time: now,
+    details: { form_uid: uid, deleted_by: deletedBy, submissions: count ?? 0, reason },
+  });
+
+  return { submissions: count ?? 0 };
+}
+
+/** Restaure un formulaire et les soumissions supprimées avec lui. */
+export async function restoreForm(uid: string, restoredBy: string): Promise<boolean> {
+  const supabase = await getSupabase();
+  const now = new Date().toISOString();
+
+  const { error } = await supabase
+    .from("forms")
+    .update({ deleted_at: null, deleted_by: null, delete_reason: null })
+    .eq("uid", uid);
+  if (error) return false;
+
+  // Ne réactive que les soumissions supprimées par la suppression du formulaire,
+  // pas celles retirées individuellement auparavant.
+  await supabase
+    .from("submissions")
+    .update({ deleted_at: null, deleted_by: null, delete_reason: null, updated_at: now })
+    .eq("form_uid", uid)
+    .like("delete_reason", `Formulaire ${uid}%`);
+
+  await supabase.from("sync_logs").insert({
+    action: "restore_form",
+    count: 1,
+    time: now,
+    details: { form_uid: uid, restored_by: restoredBy },
+  });
+
+  return true;
 }
 
 export async function getForm(uid: string): Promise<DBForm | null> {
@@ -91,7 +181,10 @@ export async function getSubmissions(
   const supabase = await getSupabase();
   let query = supabase
     .from("submissions")
-    .select("*", { count: "exact", head: false })
+    .select("*, producer:producers(id, code, name, commune)", {
+      count: "exact",
+      head: false,
+    })
     .eq("form_uid", formUid);
 
   // Les soumissions supprimées par un utilisateur sortent de toutes les vues.
@@ -110,7 +203,11 @@ export async function getSubmission(
   options: { includeDeleted?: boolean } = {}
 ): Promise<DBSubmission | null> {
   const supabase = await getSupabase();
-  let query = supabase.from("submissions").select("*").eq("id", id);
+  // Jointure sur le référentiel : la fiche affiche le producteur rattaché
+  let query = supabase
+    .from("submissions")
+    .select("*, producer:producers(id, code, name, commune, village, phone)")
+    .eq("id", id);
   if (!options.includeDeleted) query = query.is("deleted_at", null);
 
   const { data, error } = await query.maybeSingle();
@@ -352,6 +449,8 @@ export async function syncAllForms(options: { archiveMedia?: boolean } = {}): Pr
   submissions_missing_on_kobo: number;
   total_forms: number;
   media?: { processed: number; archived: number; failed: number; remaining: number };
+  producers?: { linked: number; producers_created: number; without_code: number };
+  parcels?: { created: number; updated: number; skipped: number };
   errors?: string[];
 }> {
   const startedAt = Date.now();
@@ -403,7 +502,27 @@ export async function syncAllForms(options: { archiveMedia?: boolean } = {}): Pr
     }
   }
 
-  // 3. Archivage des médias avec le temps restant.
+  // 3. Rattachement des fiches dont le formulaire porte un code producteur.
+  // Les fiches sans code restent « à rattacher » : c'est une décision humaine.
+  let producers;
+  try {
+    const { autoLinkFromCodes } = await import("./producers-db");
+    producers = await autoLinkFromCodes({ limit: 500 });
+  } catch (e: any) {
+    errors.push(`Rattachement producteurs: ${e.message || "Erreur inconnue"}`);
+  }
+
+  // 4. Registre des parcelles : chaque tracé d'une fiche rattachée reçoit un
+  // code dérivé de celui du producteur (TCCO001-1, TCCO001-2…).
+  let parcels;
+  try {
+    const { syncParcels } = await import("./parcels-db");
+    parcels = await syncParcels({ limit: 500 });
+  } catch (e: any) {
+    errors.push(`Registre parcelles: ${e.message || "Erreur inconnue"}`);
+  }
+
+  // 5. Archivage des médias avec le temps restant.
   // Les images sont copiées dans Supabase Storage pour rester consultables
   // même après suppression de la soumission sur Kobo.
   let media;
@@ -436,6 +555,8 @@ export async function syncAllForms(options: { archiveMedia?: boolean } = {}): Pr
     submissions_missing_on_kobo: totalMissing,
     total_forms: forms.length,
     media,
+    producers,
+    parcels,
     errors: errors.length > 0 ? errors : undefined,
   };
 }

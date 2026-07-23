@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-import type { Point } from "@/lib/geo";
+import { polygonAreaHa, type Point } from "@/lib/geo";
 
 export interface Parcelle {
   id: string;
@@ -38,25 +38,6 @@ const COLORS = [
   "#2563eb", "#dc2626", "#16a34a", "#ca8a04",
   "#9333ea", "#ea580c", "#0891b2", "#be185d",
 ];
-
-/** Aire d'un polygone géographique en hectares (formule du lacet, projection locale). */
-function polygonAreaHa(points: Point[]): number | null {
-  if (points.length < 3) return null;
-  const R = 6378137;
-  const latRef = (points.reduce((s, p) => s + p.lat, 0) / points.length) * (Math.PI / 180);
-  const xy = points.map((p) => ({
-    x: (p.lng * Math.PI) / 180 * R * Math.cos(latRef),
-    y: (p.lat * Math.PI) / 180 * R,
-  }));
-  let sum = 0;
-  for (let i = 0; i < xy.length; i++) {
-    const a = xy[i];
-    const b = xy[(i + 1) % xy.length];
-    sum += a.x * b.y - b.x * a.y;
-  }
-  const m2 = Math.abs(sum) / 2;
-  return m2 / 10000;
-}
 
 function escapeHtml(value: string): string {
   return value
