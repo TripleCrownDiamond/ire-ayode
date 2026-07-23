@@ -152,23 +152,73 @@ export default function SubmissionPage() {
   const grouped = getFieldsByGroup(fields);
   const info = getMainInfo(fields);
 
+  // Carte des attachments Kobo (filename → download_url)
+  const attachments = (data._attachments as any[]) || [];
+  const attachmentMap = new Map<string, string>();
+  for (const att of attachments) {
+    // Priorité à l'URL medium, puis large, puis download
+    const url = att.download_medium_url || att.download_large_url || att.download_url || "";
+    if (url) {
+      attachmentMap.set(att.filename, url);
+      // Fallback: media_file_basename sans extension
+      if (att.media_file_basename) {
+        attachmentMap.set(att.media_file_basename, url);
+      }
+    }
+  }
+
   // Parcelle
   const parcelleField = fields.find((f) => /parcelle|plan.*parcellaire/i.test(f.key));
   const parcellePoints = parcelleField
     ? parseParcellePoints(String(parcelleField.value))
     : [];
 
-  // GPS
-  const gpsField = fields.find((f) => isGeoField(f.key) && !isParcelleField(f.key));
-  const gpsValue = gpsField ? String(gpsField.value) : null;
-  const gpsCoords = gpsValue
-    ? gpsValue.split(/\\s+/).map(Number).slice(0, 2)
-    : null;
+  // GPS — fallback multiple : champ geopoint, _geolocation array, _geolocation string
+  let gpsPoint: { lat: number; lng: number } | null = null;
 
-  // Images (non-signatures)
+  // 1. Champ GPS identifié par isGeoField (geopoint, gps, coordon)
+  if (!gpsPoint) {
+    const gpsField = fields.find((f) => isGeoField(f.key) && !isParcelleField(f.key));
+    if (gpsField) {
+      const raw = String(gpsField.value);
+      const parts = raw.split(/\s+/).map(Number);
+      if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        gpsPoint = { lat: parts[0], lng: parts[1] };
+      }
+    }
+  }
+
+  // 2. _geolocation (format array Kobo)
+  if (!gpsPoint) {
+    const geo = data._geolocation;
+    if (Array.isArray(geo) && geo.length >= 2 && geo[0] != null && geo[1] != null) {
+      const lat = Number(geo[0]);
+      const lng = Number(geo[1]);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        gpsPoint = { lat, lng };
+      }
+    }
+  }
+
+  // 3. _geolocation (format string Kobo "lat lng alt acc")
+  if (!gpsPoint) {
+    const geo = data._geolocation;
+    if (typeof geo === "string") {
+      const parts = geo.trim().split(/\s+/).map(Number);
+      if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        gpsPoint = { lat: parts[0], lng: parts[1] };
+      }
+    }
+  }
+
+  // Images (non-signatures) — enrichies avec downloadUrl des attachments
   const imageFields = fields
     .filter((f) => f.isImage && !/signature/i.test(f.key))
-    .map((f) => ({ key: f.label, value: String(f.value) }));
+    .map((f) => ({
+      key: f.label,
+      value: String(f.value),
+      downloadUrl: attachmentMap.get(String(f.value)) || attachmentMap.get(f.key) || undefined,
+    }));
 
   // Signatures
   const signatureFields = fields.filter((f) => f.isImage && /signature/i.test(f.key));
@@ -177,8 +227,8 @@ export default function SubmissionPage() {
   const mapParcelles =
     parcellePoints.length > 0
       ? [{ id: sub.kobo_id, name: "Parcelle", points: parcellePoints }]
-      : gpsCoords
-        ? [{ id: sub.kobo_id, name: "Position GPS", points: [{ lat: gpsCoords[0], lng: gpsCoords[1] }] }]
+      : gpsPoint
+        ? [{ id: sub.kobo_id, name: "Position GPS", points: [gpsPoint] }]
         : [];
 
   const otherFields = grouped.autre || [];
@@ -279,20 +329,24 @@ export default function SubmissionPage() {
         <div className="lg:col-span-3 space-y-4">
           {/* Producteur card */}
           {info.name && (
-            <Card className={`border-l-4 ${GROUP_COLORS.producteur}`}>
-              <CardHeader>
+            <Card className={`border-l-4 ${GROUP_COLORS.producteur} overflow-hidden`}>
+              <CardHeader className="pl-5">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <User className="h-4 w-4 text-blue-500" />
                   Producteur
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pl-5">
                 <div className="flex items-start gap-4">
                   {info.photo && (
                     <img
-                      src={getMediaUrl(uid, String(info.photo.value))}
+                      src={getMediaUrl(uid, String(info.photo.value), attachmentMap.get(String(info.photo.value)) || undefined)}
                       alt="Photo"
                       className="h-20 w-20 rounded-lg object-cover border shadow-sm"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        target.style.display = "none";
+                      }}
                     />
                   )}
                   <div className="flex-1 space-y-2">
@@ -360,14 +414,14 @@ export default function SubmissionPage() {
 
           {/* Parcelle card */}
           {grouped.parcelle && grouped.parcelle.length > 0 && (
-            <Card className={`border-l-4 ${GROUP_COLORS.parcelle}`}>
-              <CardHeader>
+            <Card className={`border-l-4 ${GROUP_COLORS.parcelle} overflow-hidden`}>
+              <CardHeader className="pl-5">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <MapPin className="h-4 w-4 text-green-500" />
                   Parcelle
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pl-5">
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   {grouped.parcelle
                     .filter((f) => !f.isImage && !f.isGeo && !/plan.*parcellaire/i.test(f.key))
@@ -391,14 +445,14 @@ export default function SubmissionPage() {
 
           {/* Calendrier card */}
           {grouped.calendrier && grouped.calendrier.length > 0 && (
-            <Card className={`border-l-4 ${GROUP_COLORS.calendrier}`}>
-              <CardHeader>
+            <Card className={`border-l-4 ${GROUP_COLORS.calendrier} overflow-hidden`}>
+              <CardHeader className="pl-5">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Calendar className="h-4 w-4 text-amber-500" />
                   Calendrier agricole
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pl-5">
                 <TimelineInfo fields={grouped.calendrier} />
               </CardContent>
             </Card>
@@ -406,14 +460,14 @@ export default function SubmissionPage() {
 
           {/* Production card */}
           {grouped.recolte && grouped.recolte.length > 0 && (
-            <Card className={`border-l-4 ${GROUP_COLORS.recolte}`}>
-              <CardHeader>
+            <Card className={`border-l-4 ${GROUP_COLORS.recolte} overflow-hidden`}>
+              <CardHeader className="pl-5">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <TrendingUp className="h-4 w-4 text-emerald-500" />
                   Production
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="pl-5">
                 <div className="grid grid-cols-2 gap-4">
                   {grouped.recolte
                     .filter((f) => !f.isImage)
@@ -465,9 +519,13 @@ export default function SubmissionPage() {
                   {signatureFields.map((f) => (
                     <div key={f.key} className="rounded-lg border overflow-hidden">
                       <img
-                        src={getMediaUrl(uid, String(f.value))}
+                        src={getMediaUrl(uid, String(f.value), attachmentMap.get(String(f.value)) || undefined)}
                         alt={f.label}
                         className="w-full h-24 object-contain bg-gray-50 p-2"
+                        onError={(e) => {
+                          const target = e.currentTarget;
+                          target.style.display = "none";
+                        }}
                       />
                       <div className="p-2 border-t">
                         <span className="text-xs text-muted-foreground">{f.label}</span>

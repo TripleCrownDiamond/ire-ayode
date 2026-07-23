@@ -38,3 +38,9 @@ backend/validations.json
 # === Logs ===
 *.log
 /tmp/
+
+# === Build info ===
+tsconfig.tsbuildinfo
+
+# === Scripts (local only) ===
+scripts/

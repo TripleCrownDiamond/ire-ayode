@@ -18,6 +18,23 @@ export function SubmissionCard({ submission, formUid }: SubmissionCardProps) {
   const fields = parseFields(data);
   const info = getMainInfo(fields);
 
+  // Carte des attachments Kobo pour résoudre les URLs d'images
+  const attachments = (data._attachments as any[]) || [];
+  const attachmentMap = new Map<string, string>();
+  for (const att of attachments) {
+    const url = att.download_medium_url || att.download_large_url || att.download_url || "";
+    if (url) {
+      attachmentMap.set(att.filename, url);
+      if (att.media_file_basename) {
+        attachmentMap.set(att.media_file_basename, url);
+      }
+    }
+  }
+
+  const photoUrl = info.photo
+    ? attachmentMap.get(String(info.photo.value)) || undefined
+    : undefined;
+
   const hasParcelle = Object.keys(data).some((k) => isParcelleField(k));
   const hasGeo = Object.keys(data).some((k) => isGeoField(k));
   const validated = submission.validated || "pending";
@@ -101,9 +118,13 @@ export function SubmissionCard({ submission, formUid }: SubmissionCardProps) {
             <div className="flex items-center gap-3 shrink-0">
               {info.photo && (
                 <img
-                  src={getMediaUrl(formUid, String(info.photo.value))}
+                  src={getMediaUrl(formUid, String(info.photo.value), photoUrl)}
                   alt="Photo"
                   className="h-12 w-12 rounded-full object-cover border-2 border-white shadow-sm"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    target.style.display = "none";
+                  }}
                 />
               )}
               <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />

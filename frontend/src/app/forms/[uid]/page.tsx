@@ -59,7 +59,6 @@ export default function FormPage() {
   const parcelles = submissions
     .map((sub) => {
       const data = sub.data || {};
-      const geo = data._geolocation as [number, number] | undefined;
       const parcelleField = Object.keys(data).find((k) =>
         /parcelle|plan.*parcellaire/i.test(k)
       );
@@ -72,9 +71,24 @@ export default function FormPage() {
       const name = nameField ? String(data[nameField]) : `Soumission #${sub.kobo_id}`;
       const submitDate = sub.submitted_at ? new Date(sub.submitted_at).toLocaleDateString("fr-FR") : "";
 
-      // Si pas de polygone mais des coordonnées GPS, créer un point
-      if (points.length === 0 && geo && Array.isArray(geo) && geo.length >= 2) {
-        points.push({ lat: geo[0], lng: geo[1] });
+      // Si pas de polygone mais des coordonnées GPS valides, créer un point
+      if (points.length === 0) {
+        const geo = data._geolocation;
+        // Format array [lat, lng, alt, acc]
+        if (Array.isArray(geo) && geo.length >= 2 && geo[0] != null && geo[1] != null) {
+          const lat = Number(geo[0]);
+          const lng = Number(geo[1]);
+          if (!isNaN(lat) && !isNaN(lng)) {
+            points.push({ lat, lng });
+          }
+        }
+        // Format string "lat lng alt acc"
+        if (points.length === 0 && typeof geo === "string") {
+          const parts = geo.trim().split(/\s+/).map(Number);
+          if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+            points.push({ lat: parts[0], lng: parts[1] });
+          }
+        }
       }
 
       return {
@@ -150,16 +164,18 @@ export default function FormPage() {
 
       {/* Map */}
       {parcelles.length > 0 && (
-        <Card>
-          <CardHeader>
+        <Card className="overflow-hidden">
+          <CardHeader className="pb-2 px-4 pt-4">
             <CardTitle className="flex items-center gap-2 text-base">
-              <MapPin className="h-4 w-4 text-green-600" />
-              Parcelles georeferencees
-              <Badge variant="secondary" className="ml-2">{parcelles.length}</Badge>
+              <MapPin className="h-4 w-4 text-green-600 shrink-0" />
+              <span className="truncate">Parcelles géoréférencées</span>
+              <Badge variant="secondary" className="ml-auto shrink-0">{parcelles.length}</Badge>
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <ParcelMap parcelles={parcelles} height="350px" />
+          <CardContent className="p-0">
+            <div className="h-[400px] md:h-[500px] w-full">
+              <ParcelMap parcelles={parcelles} height="100%" />
+            </div>
           </CardContent>
         </Card>
       )}
@@ -179,7 +195,7 @@ export default function FormPage() {
               Aucune soumission
             </p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {submissions.map((sub) => (
                 <SubmissionCard
                   key={sub.id}
