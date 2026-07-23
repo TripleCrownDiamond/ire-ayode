@@ -7,8 +7,9 @@
 //
 //   • Le formulaire contient un code producteur → il est repris tel quel et la
 //     soumission est rattachée automatiquement (source « kobo »).
-//   • Le formulaire n'en contient pas → un code est attribué ici (PR-0001…) et
-//     l'utilisateur rattache la soumission (source « manuel »).
+//   • Le formulaire n'en contient pas → un code est calculé ici à partir de la
+//     commune et de la coopérative (TCNO001…), et l'utilisateur rattache la
+//     soumission (source « manuel »).
 //
 // Aucun rapprochement automatique par nom : deux homonymes ne doivent jamais
 // être confondus.
@@ -51,8 +52,17 @@ export interface DBProducer {
   notes: string;
   source: "kobo" | "plateforme";
   created_at: string;
+  /** Codes portés précédemment, après recalcul */
+  previous_codes?: string[];
+  code_updated_at?: string | null;
+  code_prefix?: string | null;
+  order_no?: number | null;
   submission_count?: number;
   form_count?: number;
+  /** Renseignés par la liste des codes incomplets */
+  can_recalculate?: boolean;
+  new_prefix?: string;
+  blocked_reason?: string;
 }
 
 function findValue(

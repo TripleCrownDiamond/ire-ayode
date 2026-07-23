@@ -274,12 +274,12 @@ export function ProducerLink({
             </label>
             <label className="text-sm space-y-1 block">
               <span className="text-muted-foreground text-xs">
-                Code — laisser vide pour attribution automatique
+                Code — laisser vide pour un calcul depuis commune + coopérative
               </span>
               <input
                 value={draftCode}
                 onChange={(e) => setDraftCode(e.target.value)}
-                placeholder="PR-0001"
+                placeholder="TCNO001"
                 className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </label>

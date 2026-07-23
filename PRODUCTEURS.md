@@ -31,8 +31,36 @@ quatre ne diraient plus rien. Pour appliquer la règle au pied de la lettre,
 passez `IGNORE_GENERIC_WORDS` à `false` dans
 [producer-codes.ts](frontend/src/lib/producer-codes.ts).
 
-Un code déjà attribué n'est **jamais** recalculé, même si la commune ou la
+Un code complet n'est **jamais** recalculé, même si la commune ou la
 coopérative du producteur change ensuite : l'identifiant doit rester stable.
+
+### Compléter un code à trous
+
+Un producteur créé sans commune ni coopérative reçoit un code incomplet —
+`XXXX003`, ou `TCXX007` si seule la commune était connue. Dès que
+l'information manquante est renseignée, le code peut être recalculé.
+
+Le recalcul ne va que dans le sens du gain :
+
+| Code actuel | Information disponible | Résultat |
+|---|---|---|
+| `XXXX003` | commune + coopérative | `TCNO001` |
+| `XXXX003` | commune seule | `TCXX001` |
+| `TCXX007` | coopérative arrive | `TCNO001` |
+| `TCXX007` | rien de nouveau | inchangé |
+| `TCNO001` | — | inchangé, déjà complet |
+| `P-0042` | — | inchangé, code du formulaire Kobo |
+
+- Un code venu d'un formulaire Kobo n'est jamais réécrit.
+- L'ancien code est conservé dans `previous_codes` : il a pu être imprimé ou
+  noté sur le terrain, et reste consultable sur la fiche.
+- Les codes des parcelles suivent en gardant leur numéro d'ordre :
+  `XXXX003-2` devient `TCNO001-2`.
+
+**Où le faire** : un bandeau sur la page Producteurs recense les codes
+incomplets et recalcule en une fois ceux qui le peuvent. Sur une fiche
+producteur, le bouton apparaît dès que la commune ou la coopérative est
+renseignée.
 
 ### Code parcelle
 
@@ -89,6 +117,7 @@ La page **Parcelles** propose la vue liste et la vue carte, et le bouton
 ```bash
 node scripts/apply-migration.js supabase/migrations/004_identifiants_producteurs.sql
 node scripts/apply-migration.js supabase/migrations/005_codes_et_parcelles.sql
+node scripts/apply-migration.js supabase/migrations/006_recalcul_codes.sql
 ```
 
 Puis, dans l'interface :
