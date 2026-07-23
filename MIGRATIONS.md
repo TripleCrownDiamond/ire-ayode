@@ -28,16 +28,34 @@ marcher — ce qui donne l'illusion parfaite que la migration avait été perdue
 La commande `npm run migrate` recharge désormais ce cache explicitement à la
 fin de chaque exécution.
 
-## Mise en place, une seule fois
+## Mise en place
 
-Ouvrez le SQL Editor de votre projet Supabase et collez le contenu de
-[`supabase/bootstrap.sql`](supabase/bootstrap.sql). Cela crée deux objets :
+### Option recommandée — connexion directe, rien à préparer
 
-- `schema_migrations` — la trace de ce qui a été appliqué ;
-- `exec_sql` — la fonction qui permet au script d'exécuter du SQL, réservée à
-  la clé serveur (`service_role`), jamais accessible depuis le navigateur.
+Récupérez la chaîne de connexion : **Supabase → Settings → Database →
+Connection string → URI**, puis ajoutez-la dans `.env` :
 
-C'est la seule étape manuelle. Elle ne se refait jamais.
+```
+DATABASE_URL=postgresql://postgres.<ref>:<mot-de-passe>@<host>:5432/postgres
+```
+
+C'est tout — la table de suivi se crée toute seule au premier lancement.
+Ce mode a trois avantages :
+
+- **chaque migration s'exécute dans une transaction** : si une instruction
+  échoue, rien n'est appliqué, la base ne reste jamais à moitié migrée ;
+- aucune fonction `exec_sql` à créer ;
+- aucune étape manuelle, jamais.
+
+`.env` est ignoré par git — cette chaîne contient un mot de passe, elle ne
+doit jamais être versionnée ni collée dans une conversation.
+
+### Option alternative — via l'API Supabase
+
+Sans `DATABASE_URL`, le script passe par l'API et a besoin d'une fonction
+`exec_sql`. Collez alors une fois
+[`supabase/bootstrap.sql`](supabase/bootstrap.sql) dans le SQL Editor.
+Ce mode n'offre pas de transaction par migration.
 
 ## Ensuite
 
@@ -57,7 +75,8 @@ npm run migrate:status
 ```
 
 ```
-  6 migration(s) sur le disque
+  connexion Postgres directe
+  7 migration(s) sur le disque
 
   [x] 001_schema_initial            — appliquée le 23/07/2026 11:04:12
   [x] 002_persistance_locale        — appliquée le 23/07/2026 11:04:13
@@ -97,7 +116,7 @@ migrations à l'aveugle.
 Créez un fichier numéroté dans `supabase/migrations/` :
 
 ```
-supabase/migrations/007_ma_nouvelle_migration.sql
+supabase/migrations/008_ma_nouvelle_migration.sql
 ```
 
 L'ordre d'application suit l'ordre alphabétique des noms — d'où la
@@ -116,6 +135,23 @@ CREATE POLICY "Ma politique" ON ma_table FOR SELECT USING (true);
 
 Si une migration échoue, elle n'est pas enregistrée : corrigez le fichier et
 relancez. Rien n'est marqué comme appliqué tant que le SQL n'est pas passé.
+
+### Le piège de `CREATE TABLE IF NOT EXISTS`
+
+Cette instruction ne touche **jamais** une table qui existe déjà. Ajouter une
+colonne à un `CREATE TABLE` existant ne l'ajoutera donc pas aux bases créées
+avant — elles resteront silencieusement en retard.
+
+C'est exactement ce qui est arrivé à `user_permissions.is_active` : déclarée
+dans le schéma, absente de la base déployée, et une seule requête lisant
+`is_admin, is_active` échouait entièrement — tous les comptes se retrouvaient
+sans droits d'administration, et la suppression d'un formulaire répondait 403.
+
+Pour ajouter une colonne à une table existante, il faut toujours un `ALTER` :
+
+```sql
+ALTER TABLE ma_table ADD COLUMN IF NOT EXISTS ma_colonne TEXT DEFAULT '';
+```
 
 ## Rejouer une migration précise
 

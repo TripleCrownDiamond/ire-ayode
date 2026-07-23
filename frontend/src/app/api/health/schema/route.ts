@@ -22,6 +22,7 @@ const CHECKS: {
 }[] = [
   { migration: "001", feature: "Formulaires et soumissions", table: "forms", column: "uid" },
   { migration: "001", feature: "Permissions utilisateurs", table: "user_permissions", column: "is_admin" },
+  { migration: "007", feature: "Désactivation de compte", table: "user_permissions", column: "is_active" },
   { migration: "002", feature: "Suppression logique des soumissions", table: "submissions", column: "deleted_at" },
   { migration: "002", feature: "Suivi de présence sur Kobo", table: "submissions", column: "missing_on_kobo" },
   { migration: "002", feature: "Archivage local des médias", table: "attachments", column: "storage_path" },

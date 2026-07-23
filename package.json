@@ -9,5 +9,8 @@
     "make-admin": "node scripts/make-admin.js",
     "dev": "npm run dev --prefix frontend",
     "build": "npm run build --prefix frontend"
+  },
+  "dependencies": {
+    "pg": "^8.22.0"
   }
 }
