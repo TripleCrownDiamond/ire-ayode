@@ -173,19 +173,19 @@ export default function FormPage() {
         />
       )}
 
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{form.name}</h1>
-          <p className="text-muted-foreground mt-1">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight truncate">{form.name}</h1>
+          <p className="text-muted-foreground mt-1 text-sm">
             {submissions.length} soumission(s)
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           {/* Export multi-format */}
           <DropdownMenu>
-            <DropdownMenuTrigger className="group/inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+            <DropdownMenuTrigger className="group/inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border px-2 sm:px-3 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
               <Download className="h-4 w-4" />
-              Exporter
+              <span className="hidden sm:inline">Exporter</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => {
