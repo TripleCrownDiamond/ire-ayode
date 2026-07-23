@@ -20,12 +20,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Loader pendant le chargement de l'auth
   if (loading) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-background">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
-          <div className="flex items-center justify-center h-12 w-12 rounded-xl bg-primary/10">
-            <RefreshCw className="h-6 w-6 text-primary animate-spin" />
-          </div>
-          <p className="text-sm text-muted-foreground">Chargement...</p>
+          <RefreshCw className="h-8 w-8 text-primary animate-spin" />
+          <p className="text-sm text-muted-foreground">Chargement en cours...</p>
         </div>
       </div>
     );
@@ -34,12 +32,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Non connecté (ne devrait pas arriver car le middleware redirige)
   if (!user) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-background">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
-          <div className="flex items-center justify-center h-12 w-12 rounded-xl bg-primary/10">
-            <RefreshCw className="h-6 w-6 text-primary animate-spin" />
-          </div>
-          <p className="text-sm text-muted-foreground">Chargement...</p>
+          <RefreshCw className="h-8 w-8 text-primary animate-spin" />
+          <p className="text-sm text-muted-foreground">Redirection...</p>
         </div>
       </div>
     );

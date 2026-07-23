@@ -33,7 +33,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshPermissions = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/users/me");
+      const res = await fetch("/api/admin/users/me", {
+        signal: AbortSignal.timeout(8000),
+      });
       if (res.ok) {
         const data = await res.json();
         setPermissions(data.permissions || DEFAULT_PERMISSIONS);
@@ -50,6 +52,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Timeout de sécurité : même si l'API ne répond pas, on affiche le contenu
+    const safetyTimer = setTimeout(() => {
+      setPermissionsLoaded(true);
+      setLoading(false);
+    }, 10000);
+
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setUser(session?.user ?? null);
       if (session?.user) {
@@ -58,6 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setPermissionsLoaded(true);
       }
       setLoading(false);
+      clearTimeout(safetyTimer);
     });
 
     const {
@@ -73,7 +82,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(safetyTimer);
+    };
   }, []);
 
   const canRead = useCallback(
