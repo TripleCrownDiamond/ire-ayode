@@ -91,7 +91,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const canRead = useCallback(
     (module: Module) => {
       if (isAdmin) return true;
-      return permissions[module]?.read ?? false;
+      const perm = permissions[module];
+      // edit implique read : on ne peut pas écrire sans lire
+      return perm?.read || perm?.edit || false;
     },
     [isAdmin, permissions]
   );
