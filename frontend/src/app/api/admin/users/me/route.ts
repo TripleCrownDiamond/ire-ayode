@@ -13,30 +13,19 @@ export async function GET() {
 
   const admin = createAdmin();
 
-  // Requête 1 : is_admin + permissions (peut échouer si la table est vide)
-  const { data: perms } = await admin
+  // Une seule requête simple — pas de is_active pour l'instant
+  const { data: perms, error } = await admin
     .from("user_permissions")
     .select("is_admin, permissions")
     .eq("user_id", user.id)
     .maybeSingle();
 
-  // Requête 2 : is_active séparément (colonne peut être absente)
-  let isActive = true;
-  try {
-    const { data: activeRow } = await admin
-      .from("user_permissions")
-      .select("is_active")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (activeRow && activeRow.is_active === false) {
-      isActive = false;
-    }
-  } catch {
-    // Colonne is_active absente — on considère le compte actif
-  }
-
-  if (!isActive) {
-    return NextResponse.json({ error: "Compte suspendu" }, { status: 403 });
+  if (error) {
+    console.error("[/api/admin/users/me]", error.message);
+    return NextResponse.json({
+      is_admin: false,
+      permissions: DEFAULT_PERMISSIONS,
+    });
   }
 
   return NextResponse.json({
