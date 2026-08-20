@@ -1,0 +1,9 @@
+{
+  "rootDirectory": "frontend",
+  "crons": [
+    {
+      "path": "/api/cron/sync",
+      "schedule": "*/15 * * * *"
+    }
+  ]
+}
